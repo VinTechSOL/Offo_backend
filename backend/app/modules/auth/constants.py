@@ -1,0 +1,4 @@
+OTP_TTL_SECONDS = 300          # 5 minutes
+OTP_MAX_ATTEMPTS = 5
+REDIS_OTP_PREFIX = "otp:"
+REDIS_OTP_ATTEMPTS_PREFIX = "otp_attempts:"

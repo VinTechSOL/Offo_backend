@@ -1,0 +1,23 @@
+from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy.orm import Session
+
+from app.core.database import get_db
+from app.modules.auth.schemas import SendOTPRequest, VerifyOTPRequest, TokenResponse
+from app.modules.auth.service import AuthService
+
+router = APIRouter(prefix="/auth", tags=["Auth"])
+
+
+@router.post("/send-otp")
+def send_otp(data: SendOTPRequest):
+    AuthService.send_otp(data.mobile_number)
+    return {"message": "OTP sent successfully"}
+
+
+@router.post("/verify-otp", response_model=TokenResponse)
+def verify_otp(data: VerifyOTPRequest, db: Session = Depends(get_db)):
+    try:
+        token = AuthService.verify_otp(db, data.mobile_number, data.otp)
+        return {"access_token": token}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
