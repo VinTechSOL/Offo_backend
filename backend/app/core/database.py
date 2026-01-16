@@ -21,3 +21,8 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+from app.modules.staff.models import Staff
+from app.modules.staff_roles.models import StaffRole
+from app.modules.permissions.models import Permission

@@ -1,30 +1,50 @@
 from fastapi import FastAPI, Depends
 from sqlalchemy.orm import Session
 from sqlalchemy import text
-
+from contextlib import asynccontextmanager
 from app.core.database import get_db, engine
 from app.core.redis import redis_client
 
 from app.modules.auth.api import router as auth_router
 from app.modules.users.api import router as users_router
 from app.modules.vendor.api import router as vendor_router
-
 from app.modules.menu.api import router as menu_router
 from app.modules.cart.api import router as cart_router
 from app.modules.orders.api import router as orders_router
+from app.modules.notifications.api import router as notifications_router
+from app.modules.staff.api import router as staff_auth_router
+from app.modules.payments.api import router as payments_router
+from app.workers.dev_scheduler import start_scheduler,shutdown_scheduler
+from app.modules.payments.gateways.phonepe.webhook import router as phonepe_webhook_router
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    #Startup
+    
+    print("application start")
+    start_scheduler()
+    yield
+    #Shutdown
+    print("application stop")
+    shutdown_scheduler()
 
 app = FastAPI(
     title="OFFO Backend",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 app.include_router(auth_router)
+app.include_router(staff_auth_router)
 app.include_router(users_router)
 app.include_router(vendor_router)
 app.include_router(menu_router)
 app.include_router(cart_router)
 app.include_router(orders_router)
+app.include_router(payments_router)
+app.include_router(notifications_router)
+app.include_router(phonepe_webhook_router)
+
 
 @app.get("/health")
 def health():

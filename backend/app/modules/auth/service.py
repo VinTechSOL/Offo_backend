@@ -56,6 +56,7 @@ class AuthService:
 
         payload = {
             "sub": str(user_id),
+            "type":"user",
             "iat": now,
             "exp": now + timedelta(minutes=30),
         }

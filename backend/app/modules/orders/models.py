@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy import (
     BigInteger, Integer, Numeric, String,
-    DateTime, ForeignKey
+    DateTime, ForeignKey,Boolean,Column
 )
 from datetime import datetime, timezone
 from app.core.database import Base
@@ -36,6 +36,7 @@ class Order(Base):
         default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc)
     )
+    reminder_sent = Column(Boolean, default=False, nullable=False)
 
 
 class OrderItem(Base):
@@ -52,3 +53,25 @@ class OrderItem(Base):
     item_id: Mapped[int] = mapped_column(Integer, nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, nullable=False)
     price_at_time: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
+
+
+class OrderStatusLog(Base):
+    __tablename__ = "order_status_logs"
+    __table_args__ = {"schema": "orders"}
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+
+    order_id: Mapped[int] = mapped_column(
+        ForeignKey("orders.orders.order_id", ondelete="CASCADE"),
+        nullable=False
+    )
+
+    status: Mapped[str] = mapped_column(String(30), nullable=False)
+
+    changed_by: Mapped[str] = mapped_column(String(20), nullable=False)
+    changed_by_id: Mapped[int | None] = mapped_column(Integer)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+    )
