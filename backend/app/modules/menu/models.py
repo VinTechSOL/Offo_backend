@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import BigInteger, String, Boolean, Numeric, TIMESTAMP
+from sqlalchemy import BigInteger, String, Boolean, Numeric, TIMESTAMP,ForeignKey
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -27,7 +27,7 @@ class MenuItem(Base):
     item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     item_name: Mapped[str] = mapped_column(String, nullable=False)
     item_description: Mapped[str | None]
-    item_type_id: Mapped[int] = mapped_column(BigInteger)
+    item_type_id: Mapped[int] = mapped_column(BigInteger,ForeignKey("catalog.item_types.item_type_id"),nullable=False)
     image_url: Mapped[str | None]
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
@@ -48,3 +48,11 @@ class BranchMenuItem(Base):
     created_at: Mapped[str] = mapped_column(
         TIMESTAMP(timezone=True), server_default=func.now()
     )
+
+class ItemType(Base):
+    __tablename__ = "item_types"
+    __table_args__ = {"schema": "catalog"}
+
+    item_type_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    name: Mapped[str] = mapped_column(String, nullable=False,unique=True)
+    is_active: Mapped[bool] = mapped_column(Boolean,default=True)
