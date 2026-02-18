@@ -252,6 +252,34 @@ def upgrade() -> None:
     sa.UniqueConstraint('gateway_transaction_id'),
     schema='payments'
     )
+
+    op.create_table('cities',
+    sa.Column('city_id', sa.BigInteger(), nullable=False),
+    sa.Column('city_name', sa.String(), nullable=False),
+    sa.PrimaryKeyConstraint('city_id'),
+    sa.UniqueConstraint('city_name'),
+    schema='locations'
+    )
+    
+    op.create_table('campuses',
+    sa.Column('campus_id', sa.BigInteger(), nullable=False),
+    sa.Column('city_id', sa.BigInteger(), nullable=False),
+    sa.Column('campus_name', sa.String(), nullable=False),
+    sa.ForeignKeyConstraint(['city_id'], ['locations.cities.city_id'], ),
+    sa.PrimaryKeyConstraint('campus_id'),
+    schema='locations'
+    )
+    
+    op.create_table('buildings',
+    sa.Column('building_id', sa.BigInteger(), nullable=False),
+    sa.Column('campus_id', sa.BigInteger(), nullable=False),
+    sa.Column('building_name', sa.String(), nullable=False),
+    sa.Column('latitude', sa.Float(), nullable=True),
+    sa.Column('longitude', sa.Float(), nullable=True),
+    sa.ForeignKeyConstraint(['campus_id'], ['locations.campuses.campus_id'], ),
+    sa.PrimaryKeyConstraint('building_id'),
+    schema='locations'
+    )
     # ### end Alembic commands ###
 
 
@@ -277,4 +305,7 @@ def downgrade() -> None:
     op.drop_table('menu_items', schema='catalog')
     op.drop_table('menu_categories', schema='catalog')
     op.drop_table('branch_menu_items', schema='catalog')
+    op.drop_table('cities',schema='locations')
+    op.drop_table('campuses',schema='locations')
+    op.drop_table('buildings',schema='locations')
     # ### end Alembic commands ###
