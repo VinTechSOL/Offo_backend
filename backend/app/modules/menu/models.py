@@ -1,11 +1,17 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import BigInteger, String, Boolean, Numeric, TIMESTAMP,ForeignKey
+from sqlalchemy import BigInteger, String, Boolean, Numeric, TIMESTAMP,ForeignKey,UniqueConstraint,Index
 from sqlalchemy.sql import func
 from app.core.database import Base
 
 class MenuCategory(Base):
     __tablename__ = "menu_categories"
-    __table_args__ = {"schema": "catalog"}
+    __table_args__ = (UniqueConstraint(
+            "branch_id",
+            "category_name",
+            name="uq_menu_category_branch_name",
+        ),
+        {"schema": "catalog"},
+    )
 
     category_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     cafe_id: Mapped[int] = mapped_column(BigInteger)
@@ -36,10 +42,16 @@ class MenuItem(Base):
 
 class BranchMenuItem(Base):
     __tablename__ = "branch_menu_items"
-    __table_args__ = {"schema": "catalog"}
+    __table_args__ = (UniqueConstraint(
+            "branch_id",
+            "item_id",
+            name="uq_branch_item"
+        ),
+        Index("ix_branch_menu_items_branch_id","branch_id"),
+        
+        {"schema": "catalog"} )
 
     branch_menu_item_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    cafe_id: Mapped[int] = mapped_column(BigInteger)
     branch_id: Mapped[int] = mapped_column(BigInteger)
     item_id: Mapped[int] = mapped_column(BigInteger)
     category_id: Mapped[int] = mapped_column(BigInteger)
@@ -56,3 +68,5 @@ class ItemType(Base):
     item_type_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     name: Mapped[str] = mapped_column(String, nullable=False,unique=True)
     is_active: Mapped[bool] = mapped_column(Boolean,default=True)
+
+

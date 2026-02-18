@@ -7,6 +7,9 @@ from app.modules.users.service import UserService
 from app.modules.users.order_service import UserOrderService
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schemas import OrderResponse,OrderTimelineItem
+from app.modules.locations.service import UserContextService
+from app.modules.locations.schemas import UserContextCreateRequest
+
 router = APIRouter(prefix="/users", tags=["Users"])
 
 @router.get("/me")
@@ -33,15 +36,17 @@ def add_address(
     return UserService.add_address(db, user.user_id, data)
 
 
-@router.get("/orders/active", response_model=list[OrderResponse])
+@router.get("/orders/active")
 def get_my_active_orders(
     db: Session = Depends(get_db),
     user = Depends(get_current_user),
 ):
-    return OrderRepository.get_active_orders_for_user(
-        db,
-        user.user_id
-    )
+    orders = UserOrderService.list_orders(db, user.user_id)
+    return [
+        o for o in orders
+        if o["order_status"] in ["CREATED", "ACCEPTED", "PREPARING", "READY"]
+    ]
+
 
 @router.get("/orders")
 def list_my_orders(
@@ -75,3 +80,40 @@ def get_order_timeline(
         raise HTTPException(status_code=404, detail="Order not found")
 
     return OrderRepository.get_order_timeline(db, order_id)
+
+
+@router.post("/context")
+def set_user_context(
+    data: UserContextCreateRequest,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    UserContextService.set_context(
+        db,
+        user_id=user.user_id,
+        city_id=data.city_id,
+        campus_id=data.campus_id,
+        building_id=data.building_id,
+    )
+    return {"status": "context_set"}
+
+
+@router.get("/context")
+def get_user_context(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return UserContextService.get_context(db, user.user_id)
+
+
+@router.get("/context/details")
+def get_user_context_details(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    data = UserContextService.get_context_details(db, user.user_id)
+
+    if not data:
+        raise HTTPException(status_code=404, detail="User context not set")
+
+    return data

@@ -1,7 +1,6 @@
 from datetime import datetime, timedelta, timezone
+from app.core.time_utils import now_utc
 
-VISIBLE_BEFORE_MINUTES = 60
-GRACE_MINUTES = 5
 
 
 class OrderPriority:
@@ -12,25 +11,45 @@ class OrderPriority:
 
 
 def calculate_priority(order):
-    """
-    Runtime-only priority logic.
-    NO DB state changes here.
-    """
+    now = now_utc()
 
-    if order.order_type != "SCHEDULED":
-        return OrderPriority.HIGH  # instant orders always top
+    # ---------------------------
+    # INSTANT ORDERS
+    # ---------------------------
+    if order.order_type == "INSTANT":
+        if not order.created_at:
+            return OrderPriority.NORMAL
 
-    if not order.scheduled_time:
+        minutes_since_created = (
+            now - order.created_at
+        ).total_seconds() / 60
+
+        if minutes_since_created > 20:
+            return OrderPriority.EXPIRED
+
         return OrderPriority.NORMAL
 
-    now = datetime.now(timezone.utc)
 
-    minutes_diff = (order.scheduled_time - now).total_seconds() / 60
+    # ---------------------------
+    # SCHEDULED ORDERS
+    # ---------------------------
+    if order.order_type == "SCHEDULED":
 
-    if minutes_diff < -GRACE_MINUTES:
-        return OrderPriority.EXPIRED
+        if not order.scheduled_time:
+            return OrderPriority.NORMAL
 
-    if -GRACE_MINUTES <= minutes_diff <= VISIBLE_BEFORE_MINUTES:
-        return OrderPriority.HIGH
+        minutes_diff = (
+            order.scheduled_time - now
+        ).total_seconds() / 60
 
-    return OrderPriority.LOW
+        # Expire 5 mins after scheduled time
+        if minutes_diff < -5:
+            return OrderPriority.EXPIRED
+
+        # Within 60 mins window
+        if 0 <= minutes_diff <= 60:
+            return OrderPriority.HIGH
+
+        return OrderPriority.LOW
+
+    return OrderPriority.NORMAL

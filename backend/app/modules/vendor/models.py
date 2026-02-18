@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import BigInteger, String, Boolean, TIMESTAMP
+from sqlalchemy import BigInteger, String, Boolean, TIMESTAMP,ForeignKey
+from datetime import time
 from sqlalchemy.sql import func
 from app.core.database import Base
 
@@ -24,8 +25,21 @@ class CafeBranch(Base):
     branch_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     cafe_id: Mapped[int] = mapped_column(BigInteger)
     branch_name: Mapped[str]
-    email_id: Mapped[str | None]
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    created_at: Mapped[str] = mapped_column(
-        TIMESTAMP(timezone=True), server_default=func.now()
+
+    city_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("locations.cities.city_id"), nullable=False
     )
+    campus_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("locations.campuses.campus_id"), nullable=False
+    )
+    building_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("locations.buildings.building_id")
+    )
+
+    opens_at: Mapped[time] = mapped_column(nullable=False)
+    closes_at: Mapped[time] = mapped_column(nullable=False)
+
+    latitude: Mapped[float | None]
+    longitude: Mapped[float | None]
+
+    is_active: Mapped[bool]

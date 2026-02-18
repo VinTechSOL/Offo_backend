@@ -10,3 +10,17 @@ class VerifyOTPRequest(BaseModel):
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+
+
+class SignupInitRequest(BaseModel):
+    phone: str
+    first_name: str
+    last_name: str
+
+class SignupVerifyRequest(BaseModel):
+    phone: str
+    otp: str
+
+class SignupResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"

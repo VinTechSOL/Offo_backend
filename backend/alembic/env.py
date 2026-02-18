@@ -8,7 +8,7 @@ sys.path.append(str(Path(__file__).resolve().parents[1]))
 
 from app.core.database import Base
 from app.core.config import settings
-
+from app.modules.auth.models import *
 from app.modules.users.models import *
 from app.modules.vendor.models import *
 from app.modules.menu.models import *
@@ -17,6 +17,7 @@ from app.modules.orders.models import *
 from app.modules.notifications.models import *
 from app.modules.staff.models import *
 from app.modules.payments.models import *
+from app.modules.locations.models import *
 
 from alembic import context
 

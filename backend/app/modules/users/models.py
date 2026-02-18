@@ -1,7 +1,9 @@
 from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import BigInteger, String, Boolean, TIMESTAMP
+from sqlalchemy import BigInteger, String, Boolean, TIMESTAMP,ForeignKey,DateTime
+from datetime import datetime,timezone
 from sqlalchemy.sql import func
 from app.core.database import Base
+
 
 class User(Base):
     __tablename__ = "users"
@@ -32,3 +34,6 @@ class UserAddress(Base):
     state: Mapped[str | None]
     country: Mapped[str | None]
     pincode: Mapped[str | None]
+
+
+

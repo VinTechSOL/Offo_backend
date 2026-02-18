@@ -1,6 +1,5 @@
 from fastapi import APIRouter, Depends,HTTPException,Query
 from sqlalchemy.orm import Session
-from datetime import date,timedelta
 from app.core.database import get_db
 from app.core.security import get_current_staff,get_current_user
 from app.modules.orders.schemas import PlaceOrderRequest, PlaceOrderResponse
@@ -70,9 +69,34 @@ def move_order(
     staff = Depends(get_current_staff),
 ):
     return VendorOrderService.move_order(
-        db, order_id, staff, status
+        db=db, order_id=order_id, staff=staff, next_status=status,
     )
 
+
+@router.get("/live")
+def get_live_orders(
+    db: Session = Depends(get_db),
+    staff = Depends(get_current_staff)
+):
+    if not staff.branch_id:
+        raise HTTPException(403, "Staff not assigned to branch")
+    
+    return OrderRepository.get_live_orders(db, staff.branch_id)
+
+
+@router.get("/scheduled")
+def get_all_scheduled_orders(
+    db: Session = Depends(get_db),
+    staff = Depends(get_current_staff),):
+    if not staff.branch_id:
+        raise HTTPException(403, "Staff not assigned to branch")
+    
+    return OrderRepository.get_all_scheduled_orders(db,staff.branch_id)
+
+    
+
+
+'''
 @router.get("/scheduled")
 def scheduled_orders(
     filter: str = Query(..., enum=["today", "tomorrow", "date"]),
@@ -96,20 +120,8 @@ def scheduled_orders(
         staff.branch_id,
         target_date
     )
+'''
 
-@router.get("/live")
-def get_live_orders(
-    db: Session = Depends(get_db),
-    staff = Depends(get_current_staff)
-):
-    orders = OrderRepository.get_live_orders(db, staff.branch_id)
 
-    return [
-        {
-            "order_id": o.order_id,
-            "scheduled_time": o.scheduled_time,
-            "priority": calculate_priority(o),
-            "status": o.order_status
-        }
-        for o in orders
-    ]
+    
+   

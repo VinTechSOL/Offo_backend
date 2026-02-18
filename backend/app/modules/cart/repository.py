@@ -1,7 +1,8 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.modules.cart.models import Cart, CartItem
-from app.modules.menu.models import BranchMenuItem
+from app.modules.menu.models import BranchMenuItem,MenuItem
+from app.modules.vendor.models import CafeBranch
 
 class CartRepository:
 
@@ -14,9 +15,40 @@ class CartRepository:
     
     @staticmethod
     def get_cart_items(db, cart_id: int):
+        return (
+         db.query(
+            CartItem.cart_item_id,
+            CartItem.item_id,
+            CartItem.quantity,
+            CartItem.price_at_time,
+            MenuItem.item_name.label("name"),
+            MenuItem.image_url.label("image"),
+         )
+         .join(MenuItem, MenuItem.item_id == CartItem.item_id)
+         .filter(CartItem.cart_id == cart_id)
+         .all()
+        )
+    
+    
+    @staticmethod
+    def get_cart_item(db, cart_id: int, item_id: int):
         return db.execute(
-            select(CartItem).where(CartItem.cart_id == cart_id)
-        ).scalars().all()   
+            select(CartItem)
+            .where(
+                CartItem.cart_id == cart_id,
+                CartItem.item_id == item_id
+            )
+        ).scalar_one_or_none()
+    
+    @staticmethod
+    def get_cart_with_items(db, user_id: int):
+        cart = CartRepository.get_active_cart(db, user_id)
+        if not cart:
+            return None
+
+        items = CartRepository.get_cart_items(db, cart.cart_id)
+        return cart, items
+
   
     @staticmethod
     def create_cart(db: Session, user_id: int, branch_id: int):
@@ -55,3 +87,6 @@ class CartRepository:
         db.add(item)
         db.commit()
         return item
+    
+    def get_branch(db,branch_id):
+        return db.get(CafeBranch,branch_id)

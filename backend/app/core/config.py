@@ -5,6 +5,8 @@ class Settings(BaseSettings):
     REDIS_URL: str
     JWT_SECRET: str
     JWT_ALGORITHM: str
+    ALLOW_DEV_OTP: bool = False
+    DEV_MASTER_OTP: str = "123456"
 
     model_config = {
         "env_file": ".env",

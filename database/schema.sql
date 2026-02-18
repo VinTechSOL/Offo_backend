@@ -1,4 +1,0 @@
-CREATE SCHEMA core;
-CREATE SCHEMA catalog;
-CREATE SCHEMA orders;
-CREATE SCHEMA payments;

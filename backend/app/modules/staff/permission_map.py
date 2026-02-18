@@ -21,5 +21,6 @@ ROLE_PERMISSIONS = {
         "ACCEPT_ORDER",
         "REJECT_ORDER",
         "MOVE_ORDER",
+        "MANAGE_MENU"
     },
 }

@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.modules.users.models import User, UserAddress
+from app.modules.orders.constants import OrderStatus
 
 class UserRepository:
 
@@ -24,3 +25,5 @@ class UserRepository:
         db.commit()
         db.refresh(address)
         return address
+    
+    

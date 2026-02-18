@@ -2,11 +2,9 @@ from app.modules.orders.constants import OrderStatus
 
 VALID_TRANSITIONS = {
     OrderStatus.CREATED: {
-        OrderStatus.ACCEPTED,
-        OrderStatus.REJECTED,
-    },
-    OrderStatus.ACCEPTED: {
         OrderStatus.PREPARING,
+        OrderStatus.REJECTED,
+        OrderStatus.CANCELLED,
     },
     OrderStatus.PREPARING: {
         OrderStatus.READY,

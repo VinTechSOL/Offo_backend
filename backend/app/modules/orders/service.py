@@ -1,5 +1,6 @@
 from sqlalchemy.orm import Session
 from app.modules.cart.repository import CartRepository
+from app.modules.vendor.models import CafeBranch
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.constants import OrderStatus
 from app.modules.orders.models import Order
@@ -15,14 +16,18 @@ from app.modules.notifications.constants import (
 from datetime import timedelta,datetime,timezone
 from datetime import datetime
 from fastapi import HTTPException
+from app.core.time_utils import ist_to_utc,now_utc
 
 
 def build_scheduled_datetime(scheduled_date, scheduled_time):
+    
     if not scheduled_date or not scheduled_time:
         return None
 
     time_obj = datetime.strptime(scheduled_time, "%I:%M %p").time()
-    return datetime.combine(scheduled_date, time_obj)
+    dt = datetime.combine(scheduled_date, time_obj)
+
+    return ist_to_utc(dt)
 
 
 class OrderService:
@@ -40,19 +45,35 @@ class OrderService:
 
         if not cart_items:
             raise HTTPException(status_code=400, detail="Cart is empty")
+        
+        for item in cart_items:
+            branch_item = CartRepository.get_branch_item(
+               db, cart.branch_id, item.item_id
+            )
+            if not branch_item:
+               raise HTTPException(400, "Item unavailable")
 
-        total_amount = sum(
-            item.price_at_time * item.quantity for item in cart_items
-        )
+        subtotal = sum(
+            item.price_at_time * item.quantity
+            for item in cart_items
+        ) 
+        convenience_fee = 6
+
+        total_amount = subtotal + convenience_fee
 
         scheduled_dt = build_scheduled_datetime(
             data.scheduled_date,
             data.scheduled_time
         )
 
+        branch = db.get(CafeBranch, cart.branch_id)
+
+        if not branch:
+            raise HTTPException(400, "Invalid branch")
+
         order = Order(
             user_id=user_id,
-            cafe_id=cart.branch_id,     # TODO: replace with real cafe_id
+            cafe_id=branch.cafe_id,     # TODO: replace with real cafe_id
             branch_id=cart.branch_id,
             order_type=data.order_type,
             scheduled_time=scheduled_dt,
@@ -142,19 +163,19 @@ class VendorOrderService:
         # Strict state transition
         validate_transition(
             OrderStatus(order.order_status),
-            OrderStatus.ACCEPTED,
+            OrderStatus.PREPARING,
         )
 
         if calculate_priority(order) == OrderPriority.EXPIRED:
             raise HTTPException(400, "Order expired")
 
-        order.order_status = OrderStatus.ACCEPTED
-        order.updated_at = datetime.now(timezone.utc)
+        order.order_status = OrderStatus.PREPARING
+        order.updated_at = now_utc()
 
         OrderRepository.add_status_log(
             db,
             order_id=order.order_id,
-            status=OrderStatus.ACCEPTED,
+            status=OrderStatus.PREPARING,
             changed_by="STAFF",
             changed_by_id=staff.staff_id,
         )
@@ -196,7 +217,7 @@ class VendorOrderService:
         )
 
         order.order_status = OrderStatus.REJECTED
-        order.updated_at = datetime.now(timezone.utc)
+        order.updated_at = now_utc()
 
         db.commit()
         db.refresh(order)
@@ -219,14 +240,15 @@ class VendorOrderService:
             raise HTTPException(404, "Order not found")
 
         validate_branch_access(staff, order.branch_id)
+        validate_scheduled_visibility(order)
+        current = OrderStatus(order.order_status)
 
         validate_transition(
-            OrderStatus(order.order_status),
-            next_status,
+            current,next_status,
         )
 
         order.order_status = next_status
-        order.updated_at = datetime.now(timezone.utc)
+        order.updated_at = now_utc()
 
         OrderRepository.add_status_log(
             db,
@@ -235,6 +257,9 @@ class VendorOrderService:
             changed_by="STAFF",
             changed_by_id=staff.staff_id,
         )
+
+
+        
 
         db.commit()
         db.refresh(order)
