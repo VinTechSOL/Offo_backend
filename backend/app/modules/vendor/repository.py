@@ -46,6 +46,7 @@ class CafeRepository:
             db.query(
                 CafeBranch.branch_id,
                 CafeBranch.branch_name,
+                CafeBranch.image_url,
                 Building.building_name,
                 Campus.campus_name,
                 City.city_name,

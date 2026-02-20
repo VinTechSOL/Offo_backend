@@ -8,6 +8,10 @@ class Settings(BaseSettings):
     ALLOW_DEV_OTP: bool = False
     DEV_MASTER_OTP: str = "123456"
 
+    AWS_REGION : str
+    S3_BUCKET: str
+
+
     model_config = {
         "env_file": ".env",
         "extra": "ignore"

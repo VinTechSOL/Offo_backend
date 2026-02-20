@@ -78,7 +78,7 @@ class MenuService:
                 "item_id": r.item_id,
                 "name": r.item_name,
                 "price": float(r.price),
-                "image": r.image_url,
+                "imageUrl": r.image_url,
                 "is_veg": r.item_type.lower() == "veg",
                 "is_available": r.is_available,
                 "category_name": r.category_name,

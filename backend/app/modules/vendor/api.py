@@ -1,4 +1,5 @@
-from fastapi import APIRouter, Depends,HTTPException
+from fastapi import APIRouter, Depends,HTTPException,File,UploadFile,Form
+from datetime import time
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user,get_current_staff
@@ -6,7 +7,8 @@ from app.modules.vendor.schemas import CafeteriaCreate, CafeBranchCreate
 from app.modules.vendor.service import VendorService,CafeService
 from app.modules.vendor.schemas import CafeForUserResponse
 from app.modules.vendor.models import CafeBranch,Cafeteria
-
+from app.core.s3_service import upload_image
+import uuid
 
 router = APIRouter(prefix="/vendors", tags=["Vendors"])
 
@@ -23,10 +25,47 @@ def list_cafeterias(db: Session = Depends(get_db)):
 
 @router.post("/branches")
 def create_branch(
-    data: CafeBranchCreate,
+    cafe_id: int = Form(...),
+    branch_name: str = Form(...),
+    city_id: int = Form(...),
+    campus_id: int = Form(...),
+    building_id: int = Form(None),
+    opens_at: time = Form(...),
+    closes_at: time = Form(...),
+    is_active: bool = Form(True),
+    image: UploadFile = File(None),
     db: Session = Depends(get_db)
 ):
-    return VendorService.create_branch(db, data)
+    image_url = None
+
+    if image:
+        ext = image.filename.split(".")[-1]
+        filename = f"{uuid.uuid4()}.{ext}"
+
+        image_url = upload_image(
+            file_obj=image.file,
+            filename=filename,
+            content_type=image.content_type,
+            folder="cafe"   # 🔥 IMPORTANT
+        )
+
+    branch = CafeBranch(
+        cafe_id=cafe_id,
+        branch_name=branch_name,
+        city_id=city_id,
+        campus_id=campus_id,
+        building_id=building_id,
+        opens_at=opens_at,
+        closes_at=closes_at,
+        is_active=is_active,
+        image_url=image_url,
+    )
+
+    db.add(branch)
+    db.commit()
+    db.refresh(branch)
+
+    return branch
 
 @router.get("/cafeterias/{cafe_id}/branches")
 def list_branches(

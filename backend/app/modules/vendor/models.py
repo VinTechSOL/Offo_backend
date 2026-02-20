@@ -39,6 +39,8 @@ class CafeBranch(Base):
     opens_at: Mapped[time] = mapped_column(nullable=False)
     closes_at: Mapped[time] = mapped_column(nullable=False)
 
+    image_url: Mapped[str | None]
+
     latitude: Mapped[float | None]
     longitude: Mapped[float | None]
 

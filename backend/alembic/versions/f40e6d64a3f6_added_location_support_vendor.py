@@ -58,7 +58,7 @@ def upgrade() -> None:
 
     op.add_column(
         "cafe_branch",
-        sa.Column("building_id", sa.BigInteger(), nullable=False),
+        sa.Column("building", sa.BigInteger(), nullable=False),
         schema="core",
     )
 

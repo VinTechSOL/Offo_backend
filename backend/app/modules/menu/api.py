@@ -14,9 +14,9 @@ from app.modules.menu.schemas import (
 from app.modules.menu.service import MenuService
 from app.modules.menu.models import MenuItem
 from app.core.security import get_current_staff
+from app.core.s3_service import upload_image
 
-UPLOAD_DIR ="uploads/menu"
-os.makedirs(UPLOAD_DIR,exist_ok=True)
+
 
 router = APIRouter(prefix="/menu", tags=["Menu"])
 
@@ -59,12 +59,13 @@ def create_menu_item(
     if image:
         ext = image.filename.split(".")[-1]
         filename = f"{uuid.uuid4()}.{ext}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
 
-        with open(file_path, "wb") as buffer:
-            buffer.write(image.file.read())
-
-        image_url = f"/uploads/menu/{filename}"
+        image_url = upload_image(
+            file_obj=image.file,
+            filename=filename,
+            content_type=image.content_type,
+            folder="menu"  
+        )
 
     item = MenuItem(
         item_name=item_name,
@@ -78,7 +79,6 @@ def create_menu_item(
     db.refresh(item)
 
     return item
-
 
 
 @router.patch("/items/{item_id}")
@@ -107,12 +107,13 @@ def update_menu_item(
     if image:
         ext = image.filename.split(".")[-1]
         filename = f"{uuid.uuid4()}.{ext}"
-        file_path = os.path.join(UPLOAD_DIR, filename)
 
-        with open(file_path, "wb") as buffer:
-            buffer.write(image.file.read())
-
-        item.image_url = f"/uploads/menu/{filename}"
+        item.image_url = upload_image(
+            file_obj=image.file,
+            filename=filename,
+            content_type=image.content_type,
+            folder="menu"  
+        )
 
     db.commit()
     db.refresh(item)

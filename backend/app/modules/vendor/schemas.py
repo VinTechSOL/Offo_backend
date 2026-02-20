@@ -21,6 +21,7 @@ class CafeBranchCreate(BaseModel):
 class CafeForUserResponse(BaseModel):
     branch_id: int
     branch_name: str
+    image_url: str | None
     building_name: str | None
     campus_name: str
     city_name: str
