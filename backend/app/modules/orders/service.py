@@ -16,109 +16,218 @@ from app.modules.notifications.constants import (
 from datetime import timedelta,datetime,timezone
 from datetime import datetime
 from fastapi import HTTPException
-from app.core.time_utils import ist_to_utc,now_utc
-
+from app.core.time_utils import ist_to_utc,now_utc,IST
+from datetime import timezone
 
 def build_scheduled_datetime(scheduled_date, scheduled_time):
-    
     if not scheduled_date or not scheduled_time:
         return None
 
     time_obj = datetime.strptime(scheduled_time, "%I:%M %p").time()
-    dt = datetime.combine(scheduled_date, time_obj)
 
-    return ist_to_utc(dt)
+    # Combine as naive
+    naive_dt = datetime.combine(scheduled_date, time_obj)
+
+    # Localize to IST
+    ist_dt = IST.localize(naive_dt)
+
+    # Convert to UTC
+    return ist_dt.astimezone(timezone.utc)
 
 
 class OrderService:
 
     @staticmethod
     def place_order(db: Session, user_id: int, data):
-        print(f"🛒 [ORDER] User {user_id} placing order")
-        cart = CartRepository.get_active_cart(db, user_id)
 
+        # -------------------------
+        # 1️⃣ Validate Cart
+        # -------------------------
+
+        cart = CartRepository.get_active_cart(db, user_id)
         if not cart:
-            print("* [ORDER] No active cart")
             raise HTTPException(status_code=400, detail="No active cart")
 
         cart_items = CartRepository.get_cart_items(db, cart.cart_id)
-
         if not cart_items:
             raise HTTPException(status_code=400, detail="Cart is empty")
-        
+
         for item in cart_items:
             branch_item = CartRepository.get_branch_item(
-               db, cart.branch_id, item.item_id
+                db, cart.branch_id, item.item_id
             )
             if not branch_item:
-               raise HTTPException(400, "Item unavailable")
+                raise HTTPException(400, "Item unavailable")
+
+        # -------------------------
+        # 2️⃣ Calculate Total
+        # -------------------------
 
         subtotal = sum(
             item.price_at_time * item.quantity
             for item in cart_items
-        ) 
+        )
         convenience_fee = 6
-
         total_amount = subtotal + convenience_fee
 
-        scheduled_dt = build_scheduled_datetime(
-            data.scheduled_date,
-            data.scheduled_time
-        )
-
         branch = db.get(CafeBranch, cart.branch_id)
-
         if not branch:
             raise HTTPException(400, "Invalid branch")
 
-        order = Order(
-            user_id=user_id,
-            cafe_id=branch.cafe_id,     # TODO: replace with real cafe_id
-            branch_id=cart.branch_id,
-            order_type=data.order_type,
-            scheduled_time=scheduled_dt,
-            total_amount=total_amount,
-            order_status=OrderStatus.CREATED,   # ✅ always CREATED
-            payment_status="PENDING",
-            repeat_weekly=data.repeat_weekly,
-            repeat_remaining=3 if data.repeat_weekly else 0,
-        )
+        created_orders: list[Order] = []
 
-        OrderRepository.create_order(db, order)
-        OrderRepository.add_order_items(db, order.order_id, cart_items)
-        OrderRepository.add_status_log(
-            db,
-            order_id=order.order_id,
-            status=OrderStatus.CREATED,
-            changed_by="USER",
-            changed_by_id=user_id,
-        )
+        # -------------------------
+        # 3️⃣ INSTANT ORDER
+        # -------------------------
 
+        if data.order_type == "INSTANT":
+
+            order = Order(
+                user_id=user_id,
+                cafe_id=branch.cafe_id,
+                branch_id=cart.branch_id,
+                order_type="INSTANT",
+                scheduled_time=None,
+                total_amount=total_amount,
+                order_status=OrderStatus.CREATED,
+                payment_status="PENDING",
+            )
+
+            db.add(order)
+            db.flush()
+
+            OrderRepository.add_order_items(db, order.order_id, cart_items)
+
+            OrderRepository.add_status_log(
+                db,
+                order_id=order.order_id,
+                status=OrderStatus.CREATED,
+                changed_by="USER",
+                changed_by_id=user_id,
+            )
+
+            created_orders.append(order)
+
+        # -------------------------
+        # 4️⃣ SCHEDULED ORDER
+        # -------------------------
+
+        elif data.order_type == "SCHEDULED":
+
+            if not data.schedules:
+                raise HTTPException(
+                    400,
+                    "Schedules required for scheduled order"
+                )
+
+            for schedule in data.schedules:
+
+                scheduled_dt = build_scheduled_datetime(
+                    schedule.scheduled_date,
+                    schedule.scheduled_time
+                )
+
+                order = Order(
+                    user_id=user_id,
+                    cafe_id=branch.cafe_id,
+                    branch_id=cart.branch_id,
+                    order_type="SCHEDULED",
+                    scheduled_time=scheduled_dt,
+                    total_amount=total_amount,
+                    order_status=OrderStatus.CREATED,
+                    payment_status="PENDING",
+                )
+
+                db.add(order)
+                db.flush()
+
+                OrderRepository.add_order_items(
+                    db, order.order_id, cart_items
+                )
+
+                OrderRepository.add_status_log(
+                    db,
+                    order_id=order.order_id,
+                    status=OrderStatus.CREATED,
+                    changed_by="USER",
+                    changed_by_id=user_id,
+                )
+
+                created_orders.append(order)
+
+                # 🔁 Repeat Weekly
+                if data.repeat_weekly:
+                    for i in range(1, 4):
+                        weekly_dt = scheduled_dt + timedelta(days=7 * i)
+
+                        weekly_order = Order(
+                            user_id=user_id,
+                            cafe_id=branch.cafe_id,
+                            branch_id=cart.branch_id,
+                            order_type="SCHEDULED",
+                            scheduled_time=weekly_dt,
+                            total_amount=total_amount,
+                            order_status=OrderStatus.CREATED,
+                            payment_status="PENDING",
+                        )
+
+                        db.add(weekly_order)
+                        db.flush()
+
+                        OrderRepository.add_order_items(
+                            db,
+                            weekly_order.order_id,
+                            cart_items
+                        )
+
+                        OrderRepository.add_status_log(
+                            db,
+                            order_id=weekly_order.order_id,
+                            status=OrderStatus.CREATED,
+                            changed_by="USER",
+                            changed_by_id=user_id,
+                        )
+
+                        created_orders.append(weekly_order)
+
+        else:
+            raise HTTPException(400, "Invalid order type")
+
+        # -------------------------
+        # 5️⃣ Mark Cart Checked Out
+        # -------------------------
 
         CartRepository.mark_cart_checked_out(db, cart)
 
-        
         db.commit()
-        db.refresh(order)
 
-        print(
-            f"##[ORDER CREATED] order_id={order.order_id} "
-            f"branch_id={order.branch_id} type={order.order_type}"
-        )
+        for order in created_orders:
+            db.refresh(order)
 
-        NotificationService.trigger(
-            db=db,
-            event=NotificationEvent.ORDER_PLACED,
-            recipient_type=NotificationRecipient.STAFF,
-            recipient_id=order.branch_id,
-            title="New Order Placed",
-            message=f"Order #{order.order_id} received",
-            priority=NotificationPriority.MEDIUM,
-            order_id=order.order_id,
-        )
+        # -------------------------
+        # 6️⃣ Notify Vendor
+        # -------------------------
 
-        return order
-    
+        for order in created_orders:
+            NotificationService.trigger(
+                db=db,
+                event=NotificationEvent.ORDER_PLACED,
+                recipient_type=NotificationRecipient.STAFF,
+                recipient_id=order.branch_id,
+                title="New Order Placed",
+                message=f"Order #{order.order_id} received",
+                priority=NotificationPriority.MEDIUM,
+                order_id=order.order_id,
+            )
+
+        # -------------------------
+        # 7️⃣ Return Proper Model(s)
+        # -------------------------
+
+        if len(created_orders) == 1:
+            return created_orders[0]
+
+        return created_orders
 
 
     @staticmethod

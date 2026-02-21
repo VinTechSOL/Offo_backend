@@ -68,6 +68,7 @@ class OrderRepository:
                 OrderItem.quantity,
                 OrderItem.price_at_time,
                 MenuItem.item_name.label("name"),
+                MenuItem.image_url.label("image_url"),
             )
             .join(MenuItem, MenuItem.item_id == OrderItem.item_id)
             .filter(OrderItem.order_id == order_id)
@@ -208,6 +209,81 @@ class OrderRepository:
                 "scheduled_time": o.scheduled_time,
                 "priority":calculate_priority(o),
                 "created_at": o.created_at,
+
+                "items":[
+                    {
+                        "item_id": i.item_id,
+                        "name": i.name,
+                        "quantity": i.quantity,
+                        "price_at_time": float(i.price_at_time),
+                        "image_url": i.image_url,
+                    }
+                    for i in OrderRepository.get_order_items(db,o.order_id)
+                ]
+            }
+            for o, first, last, campus, building in rows
+            
+        ]
+    
+
+    @staticmethod
+    def get_all_today_orders(db: Session, branch_id: int):
+
+        now = now_utc()
+
+        # Start of today (UTC)
+        start_of_day = datetime(
+            year=now.year,
+            month=now.month,
+            day=now.day,
+            tzinfo=now.tzinfo
+        )
+
+        end_of_day = start_of_day + timedelta(days=1)
+
+        rows = (
+            db.query(
+                Order,
+                User.first_name,
+                User.last_name,
+                Campus.campus_name,
+                Building.building_name,
+            )
+            .join(User, User.user_id == Order.user_id)
+            .join(Cafe, Cafe.branch_id == Order.branch_id)
+            .join(Campus, Campus.campus_id == Cafe.campus_id)
+            .join(Building, Building.building_id == Cafe.building_id)
+            .filter(
+                Order.branch_id == branch_id,
+                Order.created_at >= start_of_day,
+                Order.created_at < end_of_day,
+            )
+           .order_by(Order.created_at.desc())
+           .all()
+        )
+
+        return [
+            {
+                "order_id": o.order_id,
+                "user_name": f"{first} {last}",
+                "campus_name": campus,
+                "building_name": building,
+                "order_status": o.order_status,
+                "payment_status": o.payment_status,
+                "total_amount": float(o.total_amount),
+                "scheduled_time": o.scheduled_time,
+                "priority": calculate_priority(o),
+                "created_at": o.created_at,
+                "items": [
+                    {
+                        "item_id": i.item_id,
+                        "name": i.name,
+                        "quantity": i.quantity,
+                        "price_at_time": float(i.price_at_time),
+                        "image_url": i.image_url,
+                    }
+                    for i in OrderRepository.get_order_items(db, o.order_id)
+                ],
             }
             for o, first, last, campus, building in rows
         ]
@@ -375,10 +451,10 @@ class OrderRepository:
         results = []
 
         for order, first, last, campus, building in rows:
-
-
             if calculate_priority(order) == OrderPriority.EXPIRED:
                 continue
+
+            items = OrderRepository.get_order_items(db,order.order_id)
 
             results.append({
                 "order_id": order.order_id,
@@ -392,6 +468,17 @@ class OrderRepository:
                 "total_amount": float(order.total_amount),
                 "payment_status": order.payment_status,
                 "priority": calculate_priority(order),
+                
+                "items":[
+                    {
+                        "item_id": i.item_id,
+                        "name": i.name,
+                        "quantity": i.quantity,
+                        "price_at_time": float(i.price_at_time),
+                        "image_url": i.image_url,
+                    }
+                    for i in items
+                ]
             })
 
         return results

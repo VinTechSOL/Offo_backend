@@ -5,7 +5,7 @@ from app.core.database import get_db
 from app.core.security import get_current_user,get_current_staff
 from app.modules.vendor.schemas import CafeteriaCreate, CafeBranchCreate
 from app.modules.vendor.service import VendorService,CafeService
-from app.modules.vendor.schemas import CafeForUserResponse
+from app.modules.vendor.schemas import CafeForUserResponse,UpdateBranchStatusRequest
 from app.modules.vendor.models import CafeBranch,Cafeteria
 from app.core.s3_service import upload_image
 import uuid
@@ -96,8 +96,36 @@ def get_profile(
         "cafe_name": cafe.cafe_name,
         "branch_name": branch.branch_name,
         "phone_number": cafe.phone_number,
+        "cafe_image": branch.image_url,
+        "opens_at": branch.opens_at,
+        "closes_at": branch.closes_at,
+        "is_active": branch.is_active
     }
 
+@router.patch("/settings/status")
+def update_branch_status(
+    payload: UpdateBranchStatusRequest,
+    db: Session = Depends(get_db),
+    staff = Depends(get_current_staff),
+):
+    if not staff.branch_id:
+        raise HTTPException(status_code=403, detail="Staff not assigned to branch")
+
+    branch = db.get(CafeBranch, staff.branch_id)
+
+    if not branch:
+        raise HTTPException(status_code=404, detail="Branch not found")
+
+    # Update branch status
+    branch.is_active = payload.is_active
+
+    db.commit()
+    db.refresh(branch)
+
+    return {
+        "message": "Branch status updated successfully",
+        "is_active": branch.is_active
+    }
 
 
 @router.get("/cafes/for-user", response_model=list[CafeForUserResponse],)

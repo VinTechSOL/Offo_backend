@@ -2,10 +2,14 @@ from pydantic import BaseModel
 from typing import Optional,List
 from datetime import date ,datetime
 
+
+class ScheduleItem(BaseModel):
+    scheduled_date: date
+    scheduled_time: str
+
 class PlaceOrderRequest(BaseModel):
     order_type: str  # INSTANT / SCHEDULED
-    scheduled_date: Optional[date] = None
-    scheduled_time: Optional[str] = None  # "09:30 AM"
+    schedules: list[ScheduleItem] = []
     repeat_weekly: bool = False
 
 

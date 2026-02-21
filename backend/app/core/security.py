@@ -1,7 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from jwt import ExpiredSignatureError, InvalidTokenError
-from jose import JWTError,jwt
+from jose import JWTError,jwt,ExpiredSignatureError
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from app.modules.staff.models import Staff
@@ -36,18 +36,23 @@ def get_current_user(
             settings.JWT_SECRET,
             algorithms=[settings.JWT_ALGORITHM]
         )
+
         sub = payload.get("sub")
         if not sub:
-            raise HTTPException(status_code=401, detail="Invalid token")
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid token",
+            )
 
         user_id = int(sub)
-        
+
     except ExpiredSignatureError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token expired",
+            detail="Token expired. Please login again.",
         )
-    except InvalidTokenError:
+
+    except JWTError:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid token",

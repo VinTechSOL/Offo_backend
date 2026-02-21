@@ -16,7 +16,8 @@ class CafeBranchCreate(BaseModel):
     closes_at: time
     is_active: bool = True
 
-
+class UpdateBranchStatusRequest(BaseModel):
+    is_active: bool
 
 class CafeForUserResponse(BaseModel):
     branch_id: int
