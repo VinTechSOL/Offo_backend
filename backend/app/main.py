@@ -20,6 +20,7 @@ from app.workers.dev_scheduler import start_scheduler,shutdown_scheduler
 from app.modules.payments.gateways.phonepe.webhook import router as phonepe_webhook_router
 from app.modules.reports.api import router as reports_router
 from app.modules.crm.api import router as crm_router
+from app.middlewares.rate_limit import RateLimitMiddleware
 
 
 
@@ -60,13 +61,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://app.offo.co.in",
-        "https://vendor.offo.co.in"
+        "https://vendor.offo.co.in",
+        "https://admin.offo.co.in",
         
     ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.add_middleware(RateLimitMiddleware)
 
 
 @app.get("/health")

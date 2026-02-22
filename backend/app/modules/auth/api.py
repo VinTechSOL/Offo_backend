@@ -37,8 +37,8 @@ def signup_verify(
 
 
 @router.post("/send-otp")
-def send_otp(data: SendOTPRequest):
-    AuthService.send_otp(data.mobile_number)
+def send_otp(data: SendOTPRequest, db: Session = Depends(get_db)):
+    AuthService.send_otp(db,data.mobile_number)
     return {"message": "OTP sent successfully"}
 
 
@@ -49,3 +49,5 @@ def verify_otp(data: VerifyOTPRequest, db: Session = Depends(get_db)):
         return {"access_token": token}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+    
+
