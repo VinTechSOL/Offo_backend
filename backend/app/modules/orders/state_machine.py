@@ -15,4 +15,8 @@ VALID_TRANSITIONS = {
     OrderStatus.PICKED_UP: {
         OrderStatus.COMPLETED,
     },
+
+    OrderStatus.REJECTED: set(),
+    OrderStatus.CANCELLED: set(),
+    OrderStatus.COMPLETED: set(),
 }

@@ -253,6 +253,44 @@ class OrderService:
 
        db.add(new_order)
 
+    @staticmethod
+    def cancel_order_by_user(db: Session, order_id: int, user_id: int):
+
+        order = db.get(Order, order_id)
+
+        if not order:
+          raise HTTPException(404, "Order not found")
+        
+        if order.user_id != user_id:
+          raise HTTPException(403, "Not allowed")
+        
+        # Only cancel if still CREATED
+        validate_transition(
+          OrderStatus(order.order_status),
+          OrderStatus.CANCELLED,
+        )
+
+        order.order_status = OrderStatus.CANCELLED
+        order.updated_at = now_utc()
+
+        OrderRepository.add_status_log(
+           db,
+           order_id=order.order_id,
+           status=OrderStatus.CANCELLED,
+           changed_by="USER",
+           changed_by_id=user_id,
+        )
+
+        db.commit()
+        db.refresh(order)
+
+        return {
+          "order_id": order.order_id,
+          "status": order.order_status,
+        }
+
+
+
 
 class VendorOrderService:
 
@@ -274,9 +312,6 @@ class VendorOrderService:
             OrderStatus(order.order_status),
             OrderStatus.PREPARING,
         )
-
-        if calculate_priority(order) == OrderPriority.EXPIRED:
-            raise HTTPException(400, "Order expired")
 
         order.order_status = OrderStatus.PREPARING
         order.updated_at = now_utc()
@@ -330,6 +365,17 @@ class VendorOrderService:
 
         db.commit()
         db.refresh(order)
+
+        NotificationService.trigger(
+            db=db,
+            event=NotificationEvent.ORDER_REJECTED,
+            recipient_type=NotificationRecipient.USER,
+            recipient_id=order.user_id,
+            title="Order Rejected",
+            message=f"Order #{order.order_id} was rejected",
+            priority=NotificationPriority.HIGH,
+            order_id=order.order_id,
+        )
 
         return {
             "order_id": order.order_id,

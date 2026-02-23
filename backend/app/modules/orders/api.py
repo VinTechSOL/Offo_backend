@@ -73,6 +73,7 @@ def reject_order(
     db: Session = Depends(get_db),
     staff = Depends(get_current_staff),
 ):
+    require_permission(staff,"REJECT_ORDER")
     return VendorOrderService.reject_order(
         db, order_id, staff
     )
@@ -83,7 +84,9 @@ def move_order(
     status: OrderStatus,   # now VALID
     db: Session = Depends(get_db),
     staff = Depends(get_current_staff),
+
 ):
+    require_permission(staff,"MOVE_ORDER")
     return VendorOrderService.move_order(
         db=db, order_id=order_id, staff=staff, next_status=status,
     )
@@ -124,6 +127,19 @@ def get_all_scheduled_orders(
     return OrderRepository.get_all_scheduled_orders(db,staff.branch_id)
 
     
+
+@router.get("/alerts")
+def get_order_alerts(
+    db: Session = Depends(get_db),
+    staff = Depends(get_current_staff),
+):
+    if not staff.branch_id:
+        raise HTTPException(403, "Staff not assigned to branch")
+
+    return OrderRepository.get_order_alert_status(
+        db,
+        staff.branch_id
+    )
 
 
 '''

@@ -8,4 +8,3 @@ class OrderStatus(str, Enum):
     COMPLETED = "COMPLETED"
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
-    EXPIRED = "EXPIRED"

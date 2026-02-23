@@ -1,22 +1,31 @@
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta
 from app.core.time_utils import now_utc
-
 
 
 class OrderPriority:
     HIGH = "HIGH"
     NORMAL = "NORMAL"
     LOW = "LOW"
-    EXPIRED = "EXPIRED"
+
+
+# Visibility window must match live query window
+LIVE_WINDOW_MINUTES = 60
 
 
 def calculate_priority(order):
+    """
+    Priority is purely for UI urgency.
+    It NEVER changes status.
+    It NEVER hides orders.
+    """
+
     now = now_utc()
 
-    # ---------------------------
+    # --------------------------------------------------
     # INSTANT ORDERS
-    # ---------------------------
+    # --------------------------------------------------
     if order.order_type == "INSTANT":
+
         if not order.created_at:
             return OrderPriority.NORMAL
 
@@ -24,32 +33,38 @@ def calculate_priority(order):
             now - order.created_at
         ).total_seconds() / 60
 
-        if minutes_since_created > 20:
-            return OrderPriority.EXPIRED
+        # >10 minutes waiting → HIGH
+        if minutes_since_created >= 10:
+            return OrderPriority.HIGH
 
-        return OrderPriority.NORMAL
+        # 5–10 minutes → NORMAL
+        if minutes_since_created >= 5:
+            return OrderPriority.NORMAL
 
+        # <5 minutes → LOW
+        return OrderPriority.LOW
 
-    # ---------------------------
+    # --------------------------------------------------
     # SCHEDULED ORDERS
-    # ---------------------------
+    # --------------------------------------------------
     if order.order_type == "SCHEDULED":
 
         if not order.scheduled_time:
             return OrderPriority.NORMAL
 
-        minutes_diff = (
+        minutes_to_scheduled = (
             order.scheduled_time - now
         ).total_seconds() / 60
 
-        # Expire 5 mins after scheduled time
-        if minutes_diff < -5:
-            return OrderPriority.EXPIRED
-
-        # Within 60 mins window
-        if 0 <= minutes_diff <= 60:
+        # Inside live window (<= 60 mins) → HIGH
+        if 0 <= minutes_to_scheduled <= LIVE_WINDOW_MINUTES:
             return OrderPriority.HIGH
 
+        # Within next 2 hours → NORMAL
+        if LIVE_WINDOW_MINUTES < minutes_to_scheduled <= 120:
+            return OrderPriority.NORMAL
+
+        # More than 2 hours away → LOW
         return OrderPriority.LOW
 
     return OrderPriority.NORMAL

@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session,joinedload
 from sqlalchemy import select, or_, and_,func
 from datetime import datetime, timedelta, timezone,date
+
 from app.modules.menu.models import MenuItem
 from app.modules.orders.models import Order, OrderItem,OrderStatusLog
 from app.modules.orders.constants import OrderStatus
@@ -10,7 +11,7 @@ from app.modules.locations.models import Campus,Building
 from app.modules.orders.priority import calculate_priority,OrderPriority
 from app.core.time_utils import now_utc,to_ist
 
-
+LIVE_WINDOW_MINUTES = 60
 class OrderRepository:
 
     # -----------------------
@@ -172,8 +173,12 @@ class OrderRepository:
 
     @staticmethod
     def get_all_scheduled_orders(db: Session, branch_id: int):
-
+        """
+        Shows scheduled orders that are
+        more than 60 minutes away.
+        """
         now = now_utc()
+        visibility_until = now + timedelta(minutes=LIVE_WINDOW_MINUTES)
 
         rows = (
             db.query(
@@ -191,7 +196,7 @@ class OrderRepository:
                 Order.branch_id == branch_id,
                 Order.order_type == "SCHEDULED",
                 Order.order_status == OrderStatus.CREATED,
-                Order.scheduled_time > now,
+                Order.scheduled_time > visibility_until,
             )
             .order_by(Order.scheduled_time.asc())
             .all()
@@ -272,7 +277,6 @@ class OrderRepository:
                 "payment_status": o.payment_status,
                 "total_amount": float(o.total_amount),
                 "scheduled_time": o.scheduled_time,
-                "priority": calculate_priority(o),
                 "created_at": o.created_at,
                 "items": [
                     {
@@ -410,8 +414,14 @@ class OrderRepository:
 
     @staticmethod
     def get_live_orders(db: Session, branch_id: int, window_minutes: int = 60):
+        """
+        Live screen shows:
+        - All INSTANT orders (CREATED, PREPARING, READY)
+        - SCHEDULED orders within next 60 minutes
+        """
+
         now = now_utc()
-        visibility_until = now + timedelta(minutes=window_minutes)
+        visibility_until = now + timedelta(minutes=LIVE_WINDOW_MINUTES)
 
         rows = (
             db.query(
@@ -430,8 +440,7 @@ class OrderRepository:
                 Order.order_status.in_([
                     OrderStatus.CREATED,
                     OrderStatus.PREPARING,
-                    OrderStatus.READY,
-                    OrderStatus.PICKED_UP,
+                    OrderStatus.READY
                 ]),
                 or_(
                     Order.order_type == "INSTANT",
@@ -440,7 +449,6 @@ class OrderRepository:
                         Order.scheduled_time <= visibility_until,
                     ),
                 ),
-
             )
             .order_by(
                 Order.created_at.asc(),
@@ -451,9 +459,6 @@ class OrderRepository:
         results = []
 
         for order, first, last, campus, building in rows:
-            if calculate_priority(order) == OrderPriority.EXPIRED:
-                continue
-
             items = OrderRepository.get_order_items(db,order.order_id)
 
             results.append({
@@ -468,7 +473,6 @@ class OrderRepository:
                 "total_amount": float(order.total_amount),
                 "payment_status": order.payment_status,
                 "priority": calculate_priority(order),
-                
                 "items":[
                     {
                         "item_id": i.item_id,
@@ -501,6 +505,42 @@ class OrderRepository:
             .order_by(Order.updated_at.desc())
             .all()
         )
+
+    
+    @staticmethod
+    def get_order_alert_status(db: Session, branch_id: int):
+
+        incoming_orders = (
+            db.query(Order)
+            .filter(
+                Order.branch_id == branch_id,
+                Order.order_status == OrderStatus.CREATED,
+            )
+            .order_by(Order.created_at.desc())
+            .all()
+        )
+
+        if not incoming_orders:
+            return {
+                "latest_order_id": None,
+                "latest_high_priority_id": None,
+                "total_active_orders": 0,
+            }
+
+        latest_order_id = incoming_orders[0].order_id
+
+        latest_high_priority_id = None
+
+        for order in incoming_orders:
+            if calculate_priority(order) == "HIGH":
+                latest_high_priority_id = order.order_id
+                break
+
+        return {
+            "latest_order_id": latest_order_id,
+            "latest_high_priority_id": latest_high_priority_id,
+            "total_active_orders": len(incoming_orders),
+        }
 
 
 

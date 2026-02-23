@@ -9,6 +9,7 @@ from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schemas import OrderResponse,OrderTimelineItem
 from app.modules.locations.service import UserContextService
 from app.modules.locations.schemas import UserContextCreateRequest
+from app.modules.orders.service import OrderService
 
 router = APIRouter(prefix="/users", tags=["Users"])
 
@@ -63,6 +64,22 @@ def get_my_order(
     user = Depends(get_current_user),
 ):
     return UserOrderService.get_order(db, user.user_id, order_id)
+
+
+@router.post("/{order_id}/cancel")
+def cancel_order(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    """
+    User can cancel only when order is still CREATED.
+    """
+    return OrderService.cancel_order_by_user(
+        db=db,
+        order_id=order_id,
+        user_id=user.user_id,
+    )
 
 
 @router.get(
