@@ -12,7 +12,7 @@ from app.modules.auth.constants import (
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.models import SignupSession
 from app.core.security_utils import (rate_limit_otp_request,reset_otp_verify_limit,rate_limit_otp_verify,validate_name)
-
+from app.core.sms.msg91_client import MSG91Client
 
 
 class AuthService:
@@ -44,7 +44,15 @@ class AuthService:
         )
 
         # TODO: MSG91 integration
-        print(f"[DEV OTP LOGIN] {mobile} -> {otp}")
+        if settings.ENVIRONMENT == "development":
+            print(f"[DEV OTP LOGIN] {mobile} -> {otp}")
+        else:
+            user_name = user.first_name or "User"
+            MSG91Client.send_otp(
+                mobile=mobile,
+                otp=otp,
+                name=user_name,
+            )
 
         return True
 
@@ -117,7 +125,17 @@ class AuthService:
         db.add(signup)
         db.commit()
 
-        print(f"[DEV OTP SIGNUP] {mobile} -> {otp}")
+        if settings.ENVIRONMENT == "development":
+            print(f"[DEV OTP SIGNUP] {mobile} -> {otp}")
+        else:
+            MSG91Client.send_otp(
+                mobile=mobile,
+                otp=otp,
+                name=first_name,
+            )
+
+
+        
 
         return True
 

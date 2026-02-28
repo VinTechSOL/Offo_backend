@@ -135,3 +135,24 @@ def cafes_for_user(
 ):
     return CafeService.get_for_user(db, user.user_id)
 
+
+@router.patch("/branches/{branch_id}/status")
+def update_branch_status(
+    branch_id: int,
+    payload: UpdateBranchStatusRequest,
+    db: Session = Depends(get_db),
+    staff=Depends(get_current_staff),
+):
+    if staff.role.role_name != "SUPER_ADMIN":
+        raise HTTPException(403, "Access denied")
+
+    branch = db.get(CafeBranch, branch_id)
+    if not branch:
+        raise HTTPException(404, "Branch not found")
+
+    branch.is_active = payload.is_active
+    db.commit()
+    db.refresh(branch)
+
+    return branch
+

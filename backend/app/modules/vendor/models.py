@@ -23,7 +23,8 @@ class CafeBranch(Base):
     __table_args__ = {"schema": "core"}
 
     branch_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    cafe_id: Mapped[int] = mapped_column(BigInteger)
+    cafe_id: Mapped[int] = mapped_column(BigInteger, ForeignKey("core.cafeteria.cafe_id"),nullable=False)
+    
     branch_name: Mapped[str]
 
     city_id: Mapped[int] = mapped_column(

@@ -7,7 +7,9 @@ class Settings(BaseSettings):
     JWT_ALGORITHM: str
     ALLOW_DEV_OTP: bool = False
     DEV_MASTER_OTP: str = "123456"
-
+    MSG91_AUTH_KEY: str = ""
+    MSG91_WIDGET_ID: str = ""
+    ENVIRONMENT: str = "development"
     AWS_REGION : str
     S3_BUCKET: str
 
