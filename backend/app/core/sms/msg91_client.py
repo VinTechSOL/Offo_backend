@@ -1,6 +1,7 @@
 import requests
-from app.core.config import settings
 from fastapi import HTTPException
+from app.core.config import settings
+
 
 class MSG91Client:
 
@@ -8,34 +9,48 @@ class MSG91Client:
 
     @staticmethod
     def send_otp(mobile: str, otp: str, name: str):
-        """
-        mobile -> 10 digit number
-        otp -> generated OTP
-        name -> first name
-        """
+
+        # Ensure 10 digit number only
+        mobile = mobile.strip()
+
+        if not mobile.isdigit() or len(mobile) != 10:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid mobile number format"
+            )
 
         payload = {
-            "template_id": settings.MSG91_WIDGET_ID,
+            "template_id": settings.MSG91_TEMPLATE_ID,
             "mobile": f"91{mobile}",
+            "authkey": settings.MSG91_AUTH_KEY,
             "otp": otp,
-            "VAR1": name,
+            "VAR1": name
         }
 
         headers = {
-            "authkey": settings.MSG91_AUTH_KEY,
-            "Content-Type": "application/json",
+            "Content-Type": "application/json"
         }
 
-        response = requests.post(
-            MSG91Client.BASE_URL,
-            json=payload,
-            headers=headers,
-            timeout=10,
-        )
+        try:
+            response = requests.post(
+                MSG91Client.BASE_URL,
+                json=payload,
+                headers=headers,
+                timeout=10
+            )
+        except requests.RequestException:
+            raise HTTPException(
+                status_code=500,
+                detail="MSG91 connection failed"
+            )
 
-        data = response.json()
+        print("MSG91 STATUS:", response.status_code)
+        print("MSG91 RESPONSE:", response.text)
 
         if response.status_code != 200:
-            raise HTTPException(status_code=500,detail="failed to send otp via sms")
+            raise HTTPException(
+                status_code=500,
+                detail="Failed to send OTP via MSG91"
+            )
 
-        return data
+        return response.json()
