@@ -13,7 +13,7 @@ class NotificationRepository:
         return notification
 
     @staticmethod
-    def get_for_user(db: Session, recipient_type: str, recipient_id: int):
+    def get_for_user(db: Session, recipient_type: NotificationRecipient, recipient_id: int):
         return (
             db.query(Notification)
             .filter(
@@ -56,3 +56,15 @@ class NotificationRepository:
             notification.is_read = True
             db.commit()
         return notification
+    
+    @staticmethod
+    def mark_all_read_for_user(db: Session, user_id: int):
+        db.execute(
+          update(Notification)
+          .where(
+              Notification.recipient_type == NotificationRecipient.USER,
+              Notification.recipient_id == user_id,
+              Notification.is_read == False,
+            )
+            .values(is_read=True)
+        )

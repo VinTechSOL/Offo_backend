@@ -61,8 +61,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://app.offo.co.in",
-        "https://vendor.offo.co.in",
-        
+        "https://vendor.offo.co.in"
+       
     ],
     allow_credentials=True,
     allow_methods=["*"],

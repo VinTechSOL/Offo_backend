@@ -9,6 +9,8 @@ class NotificationResponse(BaseModel):
     priority: str
     is_read: bool
     created_at: datetime
+    related_order_id: int | None = None
+    event_type: str
 
     class Config:
         from_attributes = True

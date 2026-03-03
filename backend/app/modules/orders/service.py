@@ -413,11 +413,36 @@ class VendorOrderService:
             changed_by_id=staff.staff_id,
         )
 
-
-        
-
         db.commit()
         db.refresh(order)
+
+        # -------------------------
+        # USER NOTIFICATIONS
+        # -------------------------
+
+        if next_status == OrderStatus.READY:
+            NotificationService.trigger(
+                db=db,
+                event=NotificationEvent.ORDER_READY,
+                recipient_type=NotificationRecipient.USER,
+                recipient_id=order.user_id,
+                title="Your Order is Ready 🎉",
+                message=f"Order #{order.order_id} is ready for pickup.",
+                priority=NotificationPriority.HIGH,
+                order_id=order.order_id,
+            )
+
+        elif next_status == OrderStatus.PREPARING:
+            NotificationService.trigger(
+                db=db,
+                event=NotificationEvent.ORDER_ACCEPTED,
+                recipient_type=NotificationRecipient.USER,
+                recipient_id=order.user_id,
+                title="Order Accepted 👨‍🍳",
+                message=f"Order #{order.order_id} is being prepared.",
+                priority=NotificationPriority.MEDIUM,
+                order_id=order.order_id,
+            )
 
         return {
             "order_id": order.order_id,

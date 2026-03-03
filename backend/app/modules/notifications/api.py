@@ -6,6 +6,7 @@ from app.core.security import get_current_user,get_current_staff
 from app.modules.notifications.repository import NotificationRepository
 from app.modules.notifications.schemas import NotificationResponse
 from app.modules.notifications.service import NotificationRecipient
+from app.modules.notifications.models import Notification
 
 router = APIRouter(prefix="/notifications", tags=["Notifications"])
 
@@ -58,3 +59,34 @@ def mark_staff_notifications_read(
 
     db.commit()
     return {"status": "ok"}
+
+
+@router.post("/user/mark-read")
+def mark_user_notifications_read(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    NotificationRepository.mark_all_read_for_user(
+        db,
+        user_id=user.user_id,
+    )
+
+    db.commit()
+    return {"status": "ok"}
+
+@router.get("/user/unread-count")
+def get_unread_count(
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    count = (
+        db.query(Notification)
+        .filter(
+            Notification.recipient_type == NotificationRecipient.USER,
+            Notification.recipient_id == user.user_id,
+            Notification.is_read == False,
+        )
+        .count()
+    )
+
+    return {"unread": count}
