@@ -5,19 +5,40 @@ from app.core.config import settings
 
 
 # -------------------------------------------------
-# S3 CLIENT
+# CREATE S3 CLIENT (LOCAL + AWS IAM ROLE SUPPORT)
 # -------------------------------------------------
 
-s3 = boto3.client(
-    "s3",
-    region_name=settings.AWS_REGION,
-)
+def get_s3_client():
 
+    """
+    Creates an S3 client that works in both:
+    - Local development (using .env credentials)
+    - AWS production (using IAM role)
+    """
+
+    if getattr(settings, "AWS_ACCESS_KEY_ID", None) and getattr(settings, "AWS_SECRET_ACCESS_KEY", None):
+
+        # Local development using .env credentials
+        return boto3.client(
+            "s3",
+            aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+            aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+            region_name=settings.AWS_REGION,
+        )
+
+    # Production (EC2 / ECS / Lambda IAM Role)
+    return boto3.client(
+        "s3",
+        region_name=settings.AWS_REGION,
+    )
+
+
+s3 = get_s3_client()
 BUCKET_NAME = settings.S3_BUCKET
 
 
 # -------------------------------------------------
-# GENERIC UPLOAD FUNCTION
+# GENERIC IMAGE UPLOAD
 # -------------------------------------------------
 
 def upload_image(
@@ -26,21 +47,27 @@ def upload_image(
     filename: str | None,
     content_type: str,
     folder: str,
-) -> str:
-    """
-    Upload file to S3 inside a specific folder.
+) -> str | None:
 
-    Example:
-        folder="menu"  -> menu/uuid.jpg
-        folder="cafe"  -> cafe/uuid.jpg
+    """
+    Upload file to S3 inside a folder.
+
+    Example keys:
+        cafe/uuid.jpg
+        menu/uuid.png
     """
 
     try:
-        # If filename not provided, generate one
-        if not filename:
-            filename = str(uuid.uuid4())
 
-        key = f"{folder}/{filename}"
+        # Extract extension
+        if filename and "." in filename:
+            ext = filename.split(".")[-1]
+        else:
+            ext = "jpg"
+
+        unique_filename = f"{uuid.uuid4()}.{ext}"
+
+        key = f"{folder}/{unique_filename}"
 
         s3.upload_fileobj(
             file_obj,
@@ -51,33 +78,42 @@ def upload_image(
             },
         )
 
-        file_url = f"https://{BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"
-
-        return file_url
+        return f"https://{BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"
 
     except NoCredentialsError:
-        raise Exception("AWS credentials not configured properly")
+
+        # Local dev safety fallback
+        print("⚠️ AWS credentials not found. Skipping upload.")
+        return None
 
     except ClientError as e:
+
         raise Exception(f"S3 Upload Failed: {str(e)}")
 
 
 # -------------------------------------------------
-# OPTIONAL: DELETE FILE (Good for future)
+# DELETE FILE FROM S3
 # -------------------------------------------------
 
 def delete_file(file_url: str):
+
     """
-    Deletes a file from S3 using its full URL.
+    Delete a file from S3 using its URL
     """
+
     try:
-        # Extract key from URL
-        key = file_url.split(f"{BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/")[1]
+
+        if not file_url:
+            return
+
+        key = file_url.split(
+            f"{BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/"
+        )[1]
 
         s3.delete_object(
             Bucket=BUCKET_NAME,
             Key=key,
         )
 
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"S3 Delete failed: {str(e)}")

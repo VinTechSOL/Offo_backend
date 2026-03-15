@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status,Query
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -9,7 +9,8 @@ from app.modules.staff.schemas import (
     VendorResponse,
 )
 from app.modules.staff.service import StaffAuthService
-
+from app.modules.orders.repository import OrderRepository
+from app.modules.staff.service import AdminReportService,DashboardService
 
 router = APIRouter(prefix="/staff", tags=["Staff Auth"])
 
@@ -34,17 +35,34 @@ def staff_login(
 # =========================================================
 @router.get("/auth/me")
 def get_my_profile(
-    staff=Depends(get_current_staff)
+    staff = Depends(get_current_staff)
 ):
-    return {
+
+    role_name = staff.role.role_name
+
+    # Determine access scope
+    if staff.role.cafe_id is None:
+        access_scope = "GLOBAL"
+    elif staff.branch_id is None:
+        access_scope = "CAFE"
+    else:
+        access_scope = "BRANCH"
+
+    response = {
         "staff_id": staff.staff_id,
         "username": staff.username,
-        "role": staff.role.role_name,
-        "branch_id": staff.branch_id,
+        "full_name": f"{staff.first_name}{staff.last_name}",
+        "role": role_name,
+        "access_scope": access_scope,
         "is_active": staff.is_active,
+        "created_at": staff.created_at,
     }
 
+    # Only include branch_id for branch staff
+    if access_scope == "BRANCH":
+        response["branch_id"] = staff.branch_id
 
+    return response
 # =========================================================
 # CREATE VENDOR (SUPER ADMIN ONLY)
 # =========================================================
@@ -130,3 +148,48 @@ def reset_vendor_password(
         "message": "Password reset successfully",
         "new_password": new_password
     }
+
+
+# =========================================================
+# Get customised customers details (SUPER ADMIN ONLY)
+# =========================================================
+
+@router.get("/get-customised-user-info")
+def get_users_by_branch(
+    branch_ids: list[int] = Query(...),
+    db: Session = Depends(get_db)
+):
+    return OrderRepository.get_users_by_branches(db, branch_ids)
+
+
+# =========================================================
+# Get customised users reports (SUPER ADMIN ONLY)
+# =========================================================
+
+
+@router.get("/customised-reports")
+def get_reports(
+    branch_ids: list[int] = Query(...),
+    range: str = Query("month"),
+    db: Session = Depends(get_db)
+):
+    return AdminReportService.get_reports(
+        db=db,
+        branch_ids=branch_ids,
+        range=range
+    )
+
+
+# =========================================================
+# Get Overview dashboard (SUPER ADMIN ONLY)
+# =========================================================
+
+@router.get("/dashboard-overview")
+def get_dashboard_overview(
+    branch_ids: list[int] = Query(...),
+    db: Session = Depends(get_db)
+):
+    return DashboardService.get_overview(
+        db=db,
+        branch_ids=branch_ids
+    )

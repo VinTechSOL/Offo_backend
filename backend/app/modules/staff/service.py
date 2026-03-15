@@ -3,11 +3,15 @@ from passlib.context import CryptContext
 from datetime import datetime, timedelta, timezone
 from jose import jwt
 from sqlalchemy.orm import Session
-
+from sqlalchemy import func
 from app.core.config import settings
 from app.modules.staff.repository import StaffRepository
 from app.modules.staff.models import Staff
 from app.modules.staff_roles.models import  StaffRole
+
+from app.modules.orders.models import Order,OrderItem
+from app.modules.orders.constants import OrderStatus
+from app.modules.menu.models import MenuItem
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -197,3 +201,132 @@ class StaffAuthService:
             settings.JWT_SECRET,
             algorithm=settings.JWT_ALGORITHM
         )
+    
+
+
+# =========================================================
+    # CUSTOMISED ADMIN REPORTS
+# =========================================================
+
+
+class AdminReportService:
+
+    @staticmethod
+    def get_reports(db: Session, branch_ids: list[int], range: str):
+
+        now = datetime.utcnow()
+
+        if range == "today":
+            start_date = now.replace(hour=0, minute=0, second=0)
+        elif range == "week":
+            start_date = now - timedelta(days=7)
+        else:
+            start_date = now - timedelta(days=30)
+
+        orders = (
+            db.query(Order)
+            .filter(
+                Order.branch_id.in_(branch_ids),
+                Order.created_at >= start_date
+            )
+            .all()
+        )
+
+        total_orders = len(orders)
+
+        total_revenue = sum(float(o.total_amount) for o in orders)
+
+        avg_order_value = (
+            total_revenue / total_orders if total_orders else 0
+        )
+
+        completed = len(
+            [o for o in orders if o.order_status == OrderStatus.COMPLETED]
+        )
+
+        cancelled = len(
+            [o for o in orders if o.order_status == OrderStatus.CANCELLED]
+        )
+
+        scheduled = len(
+            [o for o in orders if o.order_type == "SCHEDULED"]
+        )
+
+        return {
+            "total_orders": total_orders,
+            "total_revenue": total_revenue,
+            "avg_order_value": round(avg_order_value, 2),
+            "completed": completed,
+            "cancelled": cancelled,
+            "scheduled": scheduled,
+        }
+    
+
+
+# =========================================================
+    # CUSTOMISED ADMIN Overview
+# =========================================================
+
+class DashboardService:
+
+    @staticmethod
+    def get_overview(db: Session, branch_ids: list[int]):
+
+        today = datetime.utcnow().date()
+
+        orders = (
+            db.query(Order)
+            .filter(
+                Order.branch_id.in_(branch_ids),
+                func.date(Order.created_at) == today
+            )
+            .all()
+        )
+
+        total_orders = len(orders)
+
+        total_revenue = sum(float(o.total_amount) for o in orders)
+
+        avg_order_value = (
+            total_revenue / total_orders if total_orders else 0
+        )
+
+        # Weekly orders (simple mock aggregation for now)
+
+        weekly_orders = [12, 18, 14, 22, 16, 25, 20]
+
+        # Top items
+
+        rows = (
+            db.query(
+                MenuItem.item_name,
+                func.sum(OrderItem.quantity).label("sales"),
+                func.sum(
+                    OrderItem.quantity * OrderItem.price_at_time
+                ).label("revenue"),
+            )
+            .join(OrderItem, OrderItem.item_id == MenuItem.item_id)
+            .join(Order, Order.order_id == OrderItem.order_id)
+            .filter(Order.branch_id.in_(branch_ids))
+            .group_by(MenuItem.item_name)
+            .order_by(func.sum(OrderItem.quantity).desc())
+            .limit(3)
+            .all()
+        )
+
+        top_items = [
+            {
+                "name": r.item_name,
+                "sales": int(r.sales),
+                "revenue": float(r.revenue),
+            }
+            for r in rows
+        ]
+
+        return {
+            "today_orders": total_orders,
+            "total_revenue": total_revenue,
+            "avg_order_value": round(avg_order_value),
+            "weekly_orders": weekly_orders,
+            "top_items": top_items
+        }

@@ -541,6 +541,60 @@ class OrderRepository:
             "latest_high_priority_id": latest_high_priority_id,
             "total_active_orders": len(incoming_orders),
         }
+    
+
+    @staticmethod
+    def get_users_by_branches(db: Session, branch_ids: list[int]):
+
+        rows = (
+            db.query(
+               User.user_id,
+               User.first_name,
+               User.last_name,
+               User.mobile_number,
+               Order.branch_id,
+               func.count(Order.order_id).label("total_orders"),
+               func.sum(Order.total_amount).label("total_spent"),
+               func.max(Order.created_at).label("last_order"),
+            )
+           .join(Order, Order.user_id == User.user_id)
+           .filter(Order.branch_id.in_(branch_ids))
+           .group_by(
+               User.user_id,
+               User.first_name,
+               User.last_name,
+               User.mobile_number,
+               Order.branch_id,
+            )
+            .all()
+        )
+
+        results = []
+
+        for r in rows:
+
+            status = "Active"
+
+            if r.total_orders == 0:
+               status = "No Orders"
+            elif r.last_order:
+               delta = datetime.now(timezone.utc) - r.last_order
+               if delta.days > 30:
+                 status = "Inactive"
+
+            results.append({
+                "id": r.user_id,
+                "branchId": r.branch_id,
+                "firstName": r.first_name,
+                "lastName": r.last_name,
+                "mobile": r.mobile_number,
+                "totalOrders": r.total_orders,
+                "totalSpent": float(r.total_spent or 0),
+                "lastOrder": r.last_order,
+                "status": status,
+            })
+
+        return results
 
 
 
