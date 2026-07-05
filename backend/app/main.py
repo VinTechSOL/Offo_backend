@@ -60,8 +60,9 @@ app.include_router(crm_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:3001"
+        "https://app.offo.co.in",
+        "https://vendor.offo.co.in",
+        "https://admin.offo.co.in"
         
     ],
     allow_credentials=True,
