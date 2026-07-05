@@ -84,11 +84,27 @@ class PaymentRepository:
         intent_id=intent_id,
         gateway=gateway,
         attempt_number=attempt_number,
-        status=PaymentAttemptStatus.INITIATED,
+        status=PaymentAttemptStatus.INITIATED.value,
         parent_payment_id=parent_attempt_id,
       )
 
       db.add(refund)
       db.flush()
       return refund
+    
+    @staticmethod
+    def get_attempts_for_intent(
+        db: Session,
+        intent_id: int,
+    ):
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id
+            )
+            .order_by(
+                PaymentAttempt.created_at.asc()
+            )
+            .all()
+        )
 

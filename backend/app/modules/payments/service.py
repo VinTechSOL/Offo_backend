@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
-
+import logging
 from app.modules.orders.repository import OrderRepository
 from app.modules.payments.repository import PaymentRepository
 from app.modules.payments.constants import (
@@ -10,7 +10,7 @@ from app.modules.payments.constants import (
 )
 from app.modules.payments.gateways.phonepe.client import PhonePeClient
 
-
+logger = logging.getLogger(__name__)
 class PaymentService:
 
     @staticmethod
@@ -20,7 +20,7 @@ class PaymentService:
         if not order or order.user_id != user_id:
             raise HTTPException(404, "Order not found")
 
-        if order.payment_status == "PAID":
+        if order.payment_status in [ "PAID" , "REFUNDED"]:
             raise HTTPException(400, "Order already paid")
 
         intent = PaymentRepository.get_intent_by_order(db, order_id)
@@ -42,7 +42,7 @@ class PaymentService:
         db.commit()
         db.refresh(intent)
 
-        print(
+        logger.info(
             f"💳 PAYMENT INITIATED | "
             f"order={order_id} intent={intent.intent_id} attempt={attempt.attempt_id}"
         )
@@ -74,11 +74,16 @@ class PaymentService:
 
       intent = PaymentRepository.get_intent_by_order(db, order_id)
 
-      if not intent or intent.status != PaymentIntentStatus.SUCCEEDED:
+      if intent and intent.status in [
+         PaymentIntentStatus.REFUND_INITIATED.value, PaymentIntentStatus.REFUNDED.value,
+      ]:
+         raise HTTPException(400, "Refund already initiated")
+
+      if not intent or intent.status != PaymentIntentStatus.SUCCEEDED.value:
         raise HTTPException(400, "Payment not eligible for refund")
 
       payment_attempt = next(
-        (a for a in intent.attempts if a.status == PaymentAttemptStatus.SUCCESS),
+        (a for a in intent.attempts if a.status == PaymentAttemptStatus.SUCCESS.value and a.parent_payment_id is None),
         None,
       )
 
@@ -92,10 +97,10 @@ class PaymentService:
         gateway=payment_attempt.gateway,
       )
 
-      intent.status = PaymentIntentStatus.REFUND_INITIATED
+      intent.status = PaymentIntentStatus.REFUND_INITIATED.value
       db.commit()
 
-      print(
+      logger.info(
         f"🔄 REFUND INITIATED | "
         f"order={order_id} refund_attempt={refund_attempt.attempt_id}"
       )

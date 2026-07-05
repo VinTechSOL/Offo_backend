@@ -101,6 +101,22 @@ class OrderRepository:
     # -----------------------
 
     @staticmethod
+    def build_display_order_id(order: Order):
+        """
+        Human readable order id
+
+        Examples:
+        INS-240517-1023
+        SCH-240517-1024
+        """
+
+        prefix = "SCH" if order.order_type == "SCHEDULED" else "INS"
+
+        date_part = to_ist(order.created_at).strftime("%y%m%d")
+
+        return f"{prefix}-{date_part}-{order.order_id}"
+
+    @staticmethod
     def get_incoming_orders_for_branch(db: Session, branch_id: int):
         now = now_utc()
         scheduled_window = now + timedelta(minutes=60)
@@ -205,10 +221,12 @@ class OrderRepository:
         return [
             {
                 "order_id": o.order_id,
+                "display_order_id": OrderRepository.build_display_order_id(o),
                 "user_name": f"{first} {last}",
                 "campus_name": campus,
                 "building_name": building,
                 "order_status": o.order_status,
+                "order_type": o.order_type,
                 "payment_status": o.payment_status,
                 "total_amount": float(o.total_amount),
                 "scheduled_time": o.scheduled_time,
@@ -270,10 +288,12 @@ class OrderRepository:
         return [
             {
                 "order_id": o.order_id,
+                "display_order_id": OrderRepository.build_display_order_id(o),
                 "user_name": f"{first} {last}",
                 "campus_name": campus,
                 "building_name": building,
                 "order_status": o.order_status,
+                "order_type": o.order_type,
                 "payment_status": o.payment_status,
                 "total_amount": float(o.total_amount),
                 "scheduled_time": o.scheduled_time,
@@ -463,6 +483,7 @@ class OrderRepository:
 
             results.append({
                 "order_id": order.order_id,
+                "display_order_id": OrderRepository.build_display_order_id(order),
                 "user_name": f"{first} {last}",
                 "campus_name": campus,
                 "building_name": building,

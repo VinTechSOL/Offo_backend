@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime
+from datetime import datetime,timezone
 
 
 class PhonePeClient:
@@ -24,5 +24,5 @@ class PhonePeClient:
             "redirectUrl": f"https://phonepe.mock/redirect/{uuid.uuid4()}",
             "amount": amount,
             "status": "REDIRECTED",
-            "createdAt": datetime.utcnow().isoformat(),
+            "createdAt": datetime.now(timezone.utc).isoformat(),
         }

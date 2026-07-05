@@ -215,7 +215,7 @@ class OrderService:
                 recipient_type=NotificationRecipient.STAFF,
                 recipient_id=order.branch_id,
                 title="New Order Placed",
-                message=f"Order #{order.order_id} received",
+                message=f"Order {OrderRepository.build_display_order_id(order)} received",
                 priority=NotificationPriority.MEDIUM,
                 order_id=order.order_id,
             )
@@ -335,7 +335,7 @@ class VendorOrderService:
             recipient_type=NotificationRecipient.STAFF,
             recipient_id=order.branch_id,   # branch-level notification
             title="New Order Placed",
-            message=f"New order #{order.order_id} received",
+            message=f"New order {OrderRepository.build_display_order_id(order)} received",
             priority=NotificationPriority.MEDIUM,
             order_id=order.order_id,
         )
@@ -372,7 +372,7 @@ class VendorOrderService:
             recipient_type=NotificationRecipient.USER,
             recipient_id=order.user_id,
             title="Order Rejected",
-            message=f"Order #{order.order_id} was rejected",
+            message=f"Order {OrderRepository.build_display_order_id(order)} was rejected",
             priority=NotificationPriority.HIGH,
             order_id=order.order_id,
         )
@@ -427,7 +427,7 @@ class VendorOrderService:
                 recipient_type=NotificationRecipient.USER,
                 recipient_id=order.user_id,
                 title="Your Order is Ready 🎉",
-                message=f"Order #{order.order_id} is ready for pickup.",
+                message=f"Order {OrderRepository.build_display_order_id(order)} is ready for pickup.",
                 priority=NotificationPriority.HIGH,
                 order_id=order.order_id,
             )
@@ -439,7 +439,7 @@ class VendorOrderService:
                 recipient_type=NotificationRecipient.USER,
                 recipient_id=order.user_id,
                 title="Order Accepted 👨‍🍳",
-                message=f"Order #{order.order_id} is being prepared.",
+                message=f"Order {OrderRepository.build_display_order_id(order)} is being prepared.",
                 priority=NotificationPriority.MEDIUM,
                 order_id=order.order_id,
             )
