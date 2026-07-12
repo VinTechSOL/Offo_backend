@@ -1,5 +1,7 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy import select
+from app.modules.staff.models import Staff
+from app.modules.staff_roles.models import StaffRole
 from app.modules.vendor.models import Cafeteria, CafeBranch
 from app.modules.locations.models import City,Campus,Building
 
@@ -27,9 +29,74 @@ class VendorRepository:
 
     @staticmethod
     def list_branches(db: Session, cafe_id: int):
-        return db.execute(
-            select(CafeBranch).where(CafeBranch.cafe_id == cafe_id)
-        ).scalars().all()
+
+        VendorRole = aliased(StaffRole)
+
+        return (
+            db.query(
+                CafeBranch,
+
+                City.city_name,
+
+                Campus.campus_name,
+
+                Building.building_name,
+
+                Staff.staff_id.label("vendor_staff_id"),
+            )
+            .join(
+                City,
+                City.city_id == CafeBranch.city_id,
+            )
+            .join(
+                Campus,
+                Campus.campus_id == CafeBranch.campus_id,
+            )
+            .outerjoin(
+                Building,
+                Building.building_id == CafeBranch.building_id,
+            )
+            .outerjoin(
+                Staff,
+                Staff.branch_id == CafeBranch.branch_id,
+            )
+            .outerjoin(
+                VendorRole,
+                VendorRole.role_id == Staff.role_id,
+            )
+            .filter(
+                CafeBranch.cafe_id == cafe_id
+            )
+            .all()
+        )
+    
+    @staticmethod
+    def update_branch(
+        db: Session,
+        branch_id: int,
+        data,
+    ):
+        branch = (
+           db.query(CafeBranch)
+           .filter(CafeBranch.branch_id == branch_id)
+           .first()
+        )
+
+        if not branch:
+            return None
+
+        branch.branch_name = data.branch_name
+        branch.city_id = data.city_id
+        branch.campus_id = data.campus_id
+        branch.building_id = data.building_id
+        branch.opens_at = data.opens_at
+        branch.closes_at = data.closes_at
+        branch.is_active = data.is_active
+
+        db.commit()
+        db.refresh(branch)
+
+        return branch
 
 
 class CafeRepository:

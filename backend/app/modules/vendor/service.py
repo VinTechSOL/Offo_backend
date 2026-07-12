@@ -20,8 +20,75 @@ class VendorService:
         return VendorRepository.create_branch(db, data)
 
     @staticmethod
-    def list_branches(db: Session, cafe_id: int):
-        return VendorRepository.list_branches(db, cafe_id)
+    def list_branches(
+        db: Session,
+        cafe_id: int,
+    ):
+
+        rows = VendorRepository.list_branches(
+            db,
+            cafe_id,
+        )
+
+        branches = []
+
+        for row in rows:
+
+            branch = row[0]
+
+            branches.append({
+
+                "branch_id": branch.branch_id,
+
+                "cafe_id": branch.cafe_id,
+
+                "branch_name": branch.branch_name,
+
+                "city_id": branch.city_id,
+
+                "city_name": row.city_name,
+
+                "campus_id": branch.campus_id,
+
+                "campus_name": row.campus_name,
+
+                "building_id": branch.building_id,
+
+                "building_name": row.building_name,
+
+                "opens_at": branch.opens_at,
+
+                "closes_at": branch.closes_at,
+
+                "image_url": branch.image_url,
+
+                "is_active": branch.is_active,
+
+                "has_vendor": row.vendor_staff_id is not None,
+
+            })
+
+        return branches
+    
+    @staticmethod
+    def update_branch(
+        db: Session,
+        branch_id: int,
+        data,
+    ):
+        branch = VendorRepository.update_branch(
+           db=db,
+           branch_id=branch_id,
+           data=data,
+        )
+
+        if not branch:
+            raise HTTPException(
+                status_code=404,
+                detail="Branch not found"
+            )
+
+        return branch
     
     
 

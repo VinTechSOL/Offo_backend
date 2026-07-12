@@ -7,6 +7,7 @@ from app.modules.staff.schemas import (
     StaffLoginRequest,
     VendorCreateRequest,
     VendorResponse,
+    VendorUpdateRequest,
 )
 from app.modules.staff.service import StaffAuthService
 from app.modules.orders.repository import OrderRepository
@@ -148,6 +149,38 @@ def reset_vendor_password(
         "message": "Password reset successfully",
         "new_password": new_password
     }
+
+
+# =========================================================
+# UPDATE VENDOR (SUPER ADMIN ONLY)
+# =========================================================
+
+@router.patch(
+    "/vendors/{staff_id}",
+    response_model=VendorResponse,
+)
+def update_vendor(
+    staff_id: int,
+    payload: VendorUpdateRequest,
+    db: Session = Depends(get_db),
+    current_staff=Depends(get_current_staff),
+):
+
+    if current_staff.role.role_name != "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Access denied."
+        )
+
+    return StaffAuthService.update_vendor(
+        db=db,
+        staff_id=staff_id,
+        first_name=payload.first_name,
+        last_name=payload.last_name,
+        username=payload.username,
+        password=payload.password,
+        is_active=payload.is_active,
+    )
 
 
 # =========================================================

@@ -1,5 +1,5 @@
 from sqlalchemy.orm import Mapped, mapped_column, relationship
-from sqlalchemy import BigInteger, String, ForeignKey, Float,DateTime
+from sqlalchemy import BigInteger, String, ForeignKey, Float,DateTime,UniqueConstraint
 from app.core.database import Base
 from datetime import datetime,timezone
 
@@ -16,32 +16,77 @@ class City(Base):
 
 class Campus(Base):
     __tablename__ = "campuses"
-    __table_args__ = {"schema": "locations"}
 
-    campus_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    city_id: Mapped[int] = mapped_column(
-        ForeignKey("locations.cities.city_id"), nullable=False
+    __table_args__ = (
+        UniqueConstraint(
+            "city_id",
+            "campus_name",
+            name="uq_city_campus",
+        ),
+        {"schema": "locations"},
     )
-    campus_name: Mapped[str] = mapped_column(String, nullable=False)
 
-    city = relationship("City", back_populates="campuses")
-    buildings = relationship("Building", back_populates="campus")
+    campus_id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+    )
+
+    city_id: Mapped[int] = mapped_column(
+        ForeignKey("locations.cities.city_id"),
+        nullable=False,
+    )
+
+    campus_name: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
+
+    city = relationship(
+        "City",
+        back_populates="campuses",
+    )
+
+    buildings = relationship(
+        "Building",
+        back_populates="campus",
+    )
 
 
 class Building(Base):
     __tablename__ = "buildings"
-    __table_args__ = {"schema": "locations"}
 
-    building_id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
-    campus_id: Mapped[int] = mapped_column(
-        ForeignKey("locations.campuses.campus_id"), nullable=False
+    __table_args__ = (
+        UniqueConstraint(
+            "campus_id",
+            "building_name",
+            name="uq_campus_building",
+        ),
+        {"schema": "locations"},
     )
-    building_name: Mapped[str] = mapped_column(String, nullable=False)
+
+    building_id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+    )
+
+    campus_id: Mapped[int] = mapped_column(
+        ForeignKey("locations.campuses.campus_id"),
+        nullable=False,
+    )
+
+    building_name: Mapped[str] = mapped_column(
+        String,
+        nullable=False,
+    )
 
     latitude: Mapped[float | None] = mapped_column(Float)
+
     longitude: Mapped[float | None] = mapped_column(Float)
 
-    campus = relationship("Campus", back_populates="buildings")
+    campus = relationship(
+        "Campus",
+        back_populates="buildings",
+    )
 
 
 class UserContext(Base):

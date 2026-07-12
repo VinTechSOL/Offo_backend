@@ -181,6 +181,60 @@ class StaffAuthService:
         db.refresh(staff)
 
         return new_password
+    
+
+    # =========================================================
+    # UPDATE VENDOR (SUPER ADMIN ONLY)
+    # =========================================================
+    @staticmethod
+    def update_vendor(
+        db: Session,
+        staff_id: int,
+        first_name: str,
+        last_name: str,
+        username: str,
+        password: str | None,
+        is_active: bool,
+    ) -> Staff:
+
+        staff = StaffRepository.get_by_id(db, staff_id)
+
+        if not staff:
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor not found"
+            )
+
+        if staff.role.role_name != "VENDOR":
+            raise HTTPException(
+                status_code=400,
+                detail="Staff is not a vendor"
+            )
+
+        # Username uniqueness check
+        if username != staff.username:
+
+            existing = StaffRepository.get_by_username(
+                db,
+                username,
+            )
+
+            if existing:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Username already exists"
+                )
+
+        staff.first_name = first_name
+        staff.last_name = last_name
+        staff.username = username
+        staff.is_active = is_active
+
+
+        return StaffRepository.update(
+            db,
+            staff,
+        )
 
     # =========================================================
     # TOKEN GENERATOR

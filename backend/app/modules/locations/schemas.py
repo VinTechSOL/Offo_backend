@@ -26,3 +26,35 @@ class UserContextResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class CreateCityRequest(BaseModel):
+    city_name: str
+
+
+class CreateCampusRequest(BaseModel):
+    city_id: int
+    campus_name: str
+
+
+class CreateBuildingRequest(BaseModel):
+    campus_id: int
+    building_name: str
+    latitude: float | None = None
+    longitude: float | None = None
+
+class BuildingTreeResponse(BaseModel):
+    building_id: int
+    building_name: str
+
+
+class CampusTreeResponse(BaseModel):
+    campus_id: int
+    campus_name: str
+    buildings: list[BuildingTreeResponse]
+
+
+class CityTreeResponse(BaseModel):
+    city_id: int
+    city_name: str
+    campuses: list[CampusTreeResponse]

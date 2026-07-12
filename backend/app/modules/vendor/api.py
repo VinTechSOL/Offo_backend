@@ -3,7 +3,7 @@ from datetime import time
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user,get_current_staff
-from app.modules.vendor.schemas import CafeteriaCreate, CafeBranchCreate
+from app.modules.vendor.schemas import CafeteriaCreate, CafeBranchCreate, UpdateBranchRequest
 from app.modules.vendor.service import VendorService,CafeService
 from app.modules.vendor.schemas import CafeForUserResponse,UpdateBranchStatusRequest
 from app.modules.vendor.models import CafeBranch,Cafeteria
@@ -29,7 +29,7 @@ def create_branch(
     branch_name: str = Form(...),
     city_id: int = Form(...),
     campus_id: int = Form(...),
-    building_id: int = Form(None),
+    building_id: int | None = Form(None),
     opens_at: time = Form(...),
     closes_at: time = Form(...),
     is_active: bool = Form(True),
@@ -135,6 +135,25 @@ def cafes_for_user(
 ):
     return CafeService.get_for_user(db, user.user_id)
 
+
+@router.patch("/branches/{branch_id}")
+def update_branch(
+    branch_id: int,
+    payload: UpdateBranchRequest,
+    db: Session = Depends(get_db),
+    staff=Depends(get_current_staff),
+):
+    if staff.role.role_name != "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied"
+        )
+
+    return VendorService.update_branch(
+        db=db,
+        branch_id=branch_id,
+        data=payload,
+    )
 
 @router.patch("/branches/{branch_id}/status")
 def update_branch_status(

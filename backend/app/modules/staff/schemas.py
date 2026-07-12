@@ -18,6 +18,11 @@ class VendorCreateRequest(BaseModel):
     password: str
     branch_id: int
 
+class VendorUpdateRequest(BaseModel):
+    first_name: str
+    last_name: str
+    username: str
+    is_active: bool
 
 class VendorResponse(BaseModel):
     staff_id: int

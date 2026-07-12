@@ -11,13 +11,23 @@ class CafeBranchCreate(BaseModel):
     branch_name: str
     city_id : int
     campus_id: int
-    building_id: int
+    building_id: int | None = None
     opens_at: time
     closes_at: time
     is_active: bool = True
 
 class UpdateBranchStatusRequest(BaseModel):
     is_active: bool
+
+
+class UpdateBranchRequest(BaseModel):
+    branch_name: str
+    city_id: int
+    campus_id: int
+    building_id: int | None = None
+    opens_at: time
+    closes_at: time
+    is_active: bool = True
 
 class CafeForUserResponse(BaseModel):
     branch_id: int
