@@ -45,3 +45,15 @@ class StaffRepository:
             .where(Staff.is_active == True)
         )
         return db.execute(stmt).scalar_one_or_none()
+    
+
+    @staticmethod
+    def get_by_username_any_status(
+       db: Session,
+       username: str,
+    ):
+        return (
+           db.query(Staff)
+           .filter(Staff.username == username)
+           .first()
+        )

@@ -219,6 +219,144 @@ class LocationService:
             db,
             building,
         )
+    
+    # =========================================================
+    # Update City
+    # =========================================================
+
+    @staticmethod
+    def update_city(
+        db: Session,
+        city_id: int,
+        city_name: str,
+    ):
+
+        city = db.get(City, city_id)
+
+        if not city:
+            raise HTTPException(
+               404,
+               "City not found",
+            )
+
+        city_name = city_name.strip()
+
+        existing = (
+            db.query(City)
+            .filter(
+            City.city_name == city_name,
+            City.city_id != city_id,
+            )
+            .first()
+        )
+
+        if existing:
+           raise HTTPException(
+            400,
+            "City already exists",
+        )
+
+        city.city_name = city_name
+
+        return LocationRepository.update_city(
+            db,
+            city,
+        )
+
+
+    # =========================================================
+    # Update Campus
+    # =========================================================
+
+    @staticmethod
+    def update_campus(
+        db: Session,
+        campus_id: int,
+        campus_name: str,
+    ):
+
+        campus = db.get(Campus, campus_id)
+
+        if not campus:
+            raise HTTPException(
+                404,
+                "Campus not found",
+            )
+
+        campus_name = campus_name.strip()
+
+        existing = (
+            db.query(Campus)
+            .filter(
+                Campus.city_id == campus.city_id,
+                Campus.campus_name == campus_name,
+                Campus.campus_id != campus_id,
+            )
+            .first()
+        )
+
+        if existing:
+            raise HTTPException(
+                400,
+                "Campus already exists",
+            )
+
+        campus.campus_name = campus_name
+
+        return LocationRepository.update_campus(
+            db,
+            campus,
+        )
+    
+
+    # =========================================================
+    # Update Building
+    # =========================================================
+
+    @staticmethod
+    def update_building(
+        db: Session,
+        building_id: int,
+        building_name: str,
+        latitude: float | None,
+        longitude: float | None,
+    ):
+
+        building = db.get(Building, building_id)
+
+        if not building:
+            raise HTTPException(
+                404,
+                "Building not found",
+            )
+
+        building_name = building_name.strip()
+
+        existing = (
+            db.query(Building)
+            .filter(
+                Building.campus_id == building.campus_id,
+                Building.building_name == building_name,
+                Building.building_id != building_id,
+            )
+            .first()
+        )
+
+        if existing:
+            raise HTTPException(
+                400,
+                "Building already exists",
+            )
+
+        building.building_name = building_name
+        building.latitude = latitude
+        building.longitude = longitude
+
+        return LocationRepository.update_building(
+           db,
+           building,
+        )
+
 
     @staticmethod
     def get_location_tree(

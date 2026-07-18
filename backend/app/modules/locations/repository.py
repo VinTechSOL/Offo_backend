@@ -112,6 +112,48 @@ class LocationRepository:
         db.commit()
         db.refresh(building)
         return building
+    
+    # =====================================================
+    # Update City
+    # =====================================================
+
+    @staticmethod
+    def update_city(
+        db: Session,
+        city: City,
+    ):
+        db.add(city)
+        db.commit()
+        db.refresh(city)
+        return city
+
+    # =====================================================
+    # Update Campus
+    # =====================================================
+
+    @staticmethod
+    def update_campus(
+        db: Session,
+        campus: Campus,
+    ):
+        db.add(campus)
+        db.commit()
+        db.refresh(campus)
+        return campus
+
+    # =====================================================
+    # Update Building
+    # =====================================================
+
+    @staticmethod
+    def update_building(
+        db: Session,
+        building: Building,
+    ):
+        db.add(building)
+        db.commit()
+        db.refresh(building)
+        return building
 
     # =====================================================
     # Tree Data

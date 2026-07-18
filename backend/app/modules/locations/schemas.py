@@ -58,3 +58,17 @@ class CityTreeResponse(BaseModel):
     city_id: int
     city_name: str
     campuses: list[CampusTreeResponse]
+
+
+class UpdateCityRequest(BaseModel):
+    city_name: str
+
+
+class UpdateCampusRequest(BaseModel):
+    campus_name: str
+
+
+class UpdateBuildingRequest(BaseModel):
+    building_name: str
+    latitude: float | None = None
+    longitude: float | None = None

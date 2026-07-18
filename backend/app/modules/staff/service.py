@@ -8,7 +8,7 @@ from app.core.config import settings
 from app.modules.staff.repository import StaffRepository
 from app.modules.staff.models import Staff
 from app.modules.staff_roles.models import  StaffRole
-
+from app.modules.vendor.models import CafeBranch
 from app.modules.orders.models import Order,OrderItem
 from app.modules.orders.constants import OrderStatus
 from app.modules.menu.models import MenuItem
@@ -32,7 +32,7 @@ class StaffAuthService:
         branch_id=None
     ):
         # 🔒 Username uniqueness validation
-        existing = StaffRepository.get_by_username(db, username)
+        existing = StaffRepository.get_by_username_any_status(db, username)
         if existing:
             raise HTTPException(
                 status_code=400,
@@ -80,6 +80,18 @@ class StaffAuthService:
 
         if not staff.is_active:
             raise HTTPException(status_code=403, detail="Staff inactive")
+        
+        if staff.branch_id:
+            branch = db.get(
+                CafeBranch,
+                staff.branch_id
+            )
+
+            if branch and not branch.is_active:
+                raise HTTPException(
+                    status_code=403,
+                    detail="branch is inactive"
+                )
 
         if not pwd_context.verify(password, staff.password_hash):
             raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -193,7 +205,6 @@ class StaffAuthService:
         first_name: str,
         last_name: str,
         username: str,
-        password: str | None,
         is_active: bool,
     ) -> Staff:
 
@@ -214,7 +225,7 @@ class StaffAuthService:
         # Username uniqueness check
         if username != staff.username:
 
-            existing = StaffRepository.get_by_username(
+            existing = StaffRepository.get_by_username_any_status(
                 db,
                 username,
             )

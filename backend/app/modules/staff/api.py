@@ -178,7 +178,6 @@ def update_vendor(
         first_name=payload.first_name,
         last_name=payload.last_name,
         username=payload.username,
-        password=payload.password,
         is_active=payload.is_active,
     )
 

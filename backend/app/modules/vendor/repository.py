@@ -35,13 +35,9 @@ class VendorRepository:
         return (
             db.query(
                 CafeBranch,
-
                 City.city_name,
-
                 Campus.campus_name,
-
                 Building.building_name,
-
                 Staff.staff_id.label("vendor_staff_id"),
             )
             .join(
@@ -58,12 +54,10 @@ class VendorRepository:
             )
             .outerjoin(
                 Staff,
-                Staff.branch_id == CafeBranch.branch_id,
+                (Staff.branch_id == CafeBranch.branch_id)
+                & (Staff.role.has(role_name="VENDOR"))
             )
-            .outerjoin(
-                VendorRole,
-                VendorRole.role_id == Staff.role_id,
-            )
+            
             .filter(
                 CafeBranch.cafe_id == cafe_id
             )

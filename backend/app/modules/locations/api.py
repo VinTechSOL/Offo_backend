@@ -13,6 +13,9 @@ from app.modules.locations.schemas import (
     CreateCityRequest,
     CreateCampusRequest,
     CreateBuildingRequest,
+    UpdateCityRequest,
+    UpdateCampusRequest,
+    UpdateBuildingRequest,
 )
 
 from app.modules.locations.service import (
@@ -82,6 +85,22 @@ def create_city(
 
 
 # =========================================================
+# Update City
+# =========================================================
+
+@router.patch("/cities/{city_id}")
+def update_city(
+    city_id: int,
+    payload: UpdateCityRequest,
+    db: Session = Depends(get_db),
+):
+    return LocationService.update_city(
+        db,
+        city_id,
+        payload.city_name,
+    )
+
+# =========================================================
 # Create Campus
 # =========================================================
 
@@ -96,6 +115,22 @@ def create_campus(
         payload.campus_name,
     )
 
+
+# =========================================================
+# Update Campus
+# =========================================================
+
+@router.patch("/campuses/{campus_id}")
+def update_campus(
+    campus_id: int,
+    payload: UpdateCampusRequest,
+    db: Session = Depends(get_db),
+):
+    return LocationService.update_campus(
+        db,
+        campus_id,
+        payload.campus_name,
+    )
 
 # =========================================================
 # Create Building
@@ -114,6 +149,25 @@ def create_building(
         payload.longitude,
     )
 
+
+
+# =========================================================
+# Update Building
+# =========================================================
+
+@router.patch("/buildings/{building_id}")
+def update_building(
+    building_id: int,
+    payload: UpdateBuildingRequest,
+    db: Session = Depends(get_db),
+):
+    return LocationService.update_building(
+        db,
+        building_id,
+        payload.building_name,
+        payload.latitude,
+        payload.longitude,
+    )
 
 # =========================================================
 # Tree
