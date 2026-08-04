@@ -23,20 +23,6 @@ from app.modules.crm.api import router as crm_router
 from app.middlewares.rate_limit import RateLimitMiddleware
 
 
-
-
-'''
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    #Startup
-    
-    print("application start")
-    start_scheduler()
-    yield
-    #Shutdown
-    print("application stop")
-    shutdown_scheduler()
-'''
 app = FastAPI(
     title="OFFO Backend",
     version="1.0.0",

@@ -1,7 +1,8 @@
 from fastapi import HTTPException, status
 from passlib.context import CryptContext
+from sqlalchemy.exc import SQLAlchemyError
 from datetime import datetime, timedelta, timezone
-from jose import jwt
+from jose import jwt, JWTError
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.config import settings
@@ -12,11 +13,35 @@ from app.modules.vendor.models import CafeBranch
 from app.modules.orders.models import Order,OrderItem
 from app.modules.orders.constants import OrderStatus
 from app.modules.menu.models import MenuItem
+from app.modules.vendor.repository import VendorRepository
+from app.core.redis import redis_client
+from app.modules.auth.constants import REDIS_OTP_PREFIX, OTP_TTL_SECONDS
+from app.core.security_utils import (
+    rate_limit_otp_request,
+    rate_limit_otp_verify,
+    reset_otp_verify_limit,
+)
+from app.core.sms.msg91_client import MSG91Client
+import random, secrets, string
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
 class StaffAuthService:
+
+    @staticmethod
+    def generate_temp_password(length: int = 10):
+
+        alphabet = (
+            string.ascii_letters +
+            string.digits +
+            "@#$%"
+        )
+
+        return "".join(
+            secrets.choice(alphabet)
+            for _ in range(length)
+        )
 
     # =========================================================
     # GENERIC CREATE STAFF (Already Exists)
@@ -107,40 +132,295 @@ class StaffAuthService:
         }
 
     # =========================================================
+    # SEND, VERIFY OTP AND RESET PASSWORD
+    # =========================================================
+
+    @staticmethod
+    def send_reset_otp(
+        db: Session,
+        mobile: str,
+    ):
+
+        rate_limit_otp_request(mobile)
+
+        branch = VendorRepository.get_branch_by_owner_phone(
+            db,
+            mobile,
+        )
+
+        if not branch:
+            raise HTTPException(
+               status_code=404,
+               detail="Phone number not registered."
+            )
+
+        vendor = StaffRepository.get_vendor_by_branch(
+            db,
+            branch.branch_id,
+        )
+
+        if not vendor:
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor account not found."
+            )
+
+        otp = str(random.randint(100000, 999999))
+
+        redis_client.setex(
+            f"{REDIS_OTP_PREFIX}{mobile}",
+            OTP_TTL_SECONDS,
+            otp,
+        )
+
+        if settings.ENVIRONMENT == "development":
+            print(f"[VENDOR RESET OTP] {mobile} -> {otp}")
+        else:
+            MSG91Client.send_otp(
+                mobile=mobile,
+                otp=otp,
+                name=branch.registered_owner_name or "Vendor",
+            )
+
+        return True
+
+
+    @staticmethod
+    def verify_reset_otp(
+        db: Session,
+        mobile: str,
+        otp: str,
+    ):
+
+        rate_limit_otp_verify(mobile)
+
+        redis_key = f"{REDIS_OTP_PREFIX}{mobile}"
+
+        cached = redis_client.get(redis_key)
+
+        if settings.ALLOW_DEV_OTP and otp == settings.DEV_MASTER_OTP:
+            print("[DEV MODE] Vendor master OTP used")
+        else:
+            if not cached or cached != otp:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Invalid or expired OTP",
+                )
+
+        redis_client.delete(redis_key)
+
+        reset_otp_verify_limit(mobile)
+
+        branch = VendorRepository.get_branch_by_owner_phone(
+            db,
+            mobile,
+        )
+
+        if not branch:
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor not found",
+            )
+
+        vendor = StaffRepository.get_vendor_by_branch(
+            db,
+            branch.branch_id,
+        )
+
+        if not vendor:
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor not found",
+            )
+
+        token = jwt.encode(
+            {
+                "staff_id": str(vendor.staff_id),
+                "purpose": "password_reset",
+                "exp": datetime.now(timezone.utc) + timedelta(minutes=10),
+            },
+            settings.JWT_SECRET,
+            algorithm=settings.JWT_ALGORITHM,
+        )
+
+        return token
+
+
+
+    @staticmethod
+    def reset_password(
+        db: Session,
+        reset_token: str,
+        new_password: str,
+    ):
+
+        try:
+
+            payload = jwt.decode(
+                reset_token,
+                settings.JWT_SECRET,
+                algorithms=[settings.JWT_ALGORITHM],
+            )
+
+            if payload.get("purpose") != "password_reset":
+                raise HTTPException(
+                    status_code=401,
+                    detail="Invalid token",
+                )
+
+            staff_id = int(payload["staff_id"])
+
+        except JWTError:
+            raise HTTPException(
+                status_code=401,
+                detail="Invalid or expired token",
+            )
+
+        staff = StaffRepository.get_by_id(
+            db,
+            staff_id,
+        )
+
+        if not staff:
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor not found",
+            )
+
+        staff.password_hash = pwd_context.hash(new_password)
+
+        db.commit()
+
+        return {
+            "message": "Password updated successfully"
+        }
+    
+    # =========================================================
     # CREATE VENDOR (SUPER ADMIN ONLY)
     # =========================================================
+
     @staticmethod
     def create_vendor(
         db: Session,
         first_name: str,
         last_name: str,
         username: str,
-        password: str,
-        branch_id: int
-    ) -> Staff:
+        branch_id: int,
+    ):
 
-        # 🔍 Find VENDOR role dynamically
+        # -----------------------------------------------------
+        # Validate Branch
+        # -----------------------------------------------------
+
+        branch = db.get(CafeBranch, branch_id)
+
+        if not branch:
+            raise HTTPException(
+                status_code=404,
+                detail="Branch not found",
+            )
+
+        if not branch.is_active:
+            raise HTTPException(
+            status_code=400,
+            detail="Branch is inactive",
+        )
+
+        # -----------------------------------------------------
+        # Check Existing Vendor
+        # -----------------------------------------------------
+ 
+        existing_vendor = StaffRepository.get_vendor_by_branch_any_status(
+            db=db,
+            branch_id=branch_id,
+        )
+
+        if existing_vendor:
+            raise HTTPException(
+                status_code=409,
+                detail="Vendor already exists for this branch.",
+            )
+
+        # -----------------------------------------------------
+        # Username Validation
+        # -----------------------------------------------------
+
+        existing_username = StaffRepository.get_by_username_any_status(
+            db=db,
+            username=username,
+        )
+
+        if existing_username:
+            raise HTTPException(
+                status_code=400,
+                detail="Username already exists.",
+            )
+
+        # -----------------------------------------------------
+        # Find Vendor Role
+        # -----------------------------------------------------
+
         vendor_role = (
             db.query(StaffRole)
-            .filter(StaffRole.role_name == "VENDOR")
+            .filter(
+                StaffRole.role_name == "VENDOR"
+            )
             .first()
         )
 
         if not vendor_role:
             raise HTTPException(
                 status_code=500,
-                detail="Vendor role not configured"
+                detail="Vendor role not configured.",
             )
 
-        return StaffAuthService.create_staff(
-            db=db,
+        # -----------------------------------------------------
+        # Generate Temporary Password
+        # -----------------------------------------------------
+
+        temporary_password = StaffAuthService.generate_temp_password()
+
+        # -----------------------------------------------------
+        # Create Vendor
+        # -----------------------------------------------------
+
+        vendor = Staff(
             first_name=first_name,
             last_name=last_name,
             username=username,
-            password=password,
+            password_hash=pwd_context.hash(
+                temporary_password
+            ),
             role_id=vendor_role.role_id,
-            branch_id=branch_id
+            branch_id=branch_id,
+             is_active=True,
         )
+
+        try:
+
+            db.add(vendor)
+
+            db.commit()
+
+            db.refresh(vendor)
+
+        except SQLAlchemyError:
+
+            db.rollback()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Unable to create vendor.",
+            )
+
+        # -----------------------------------------------------
+        # Return Vendor + Temporary Password
+        # -----------------------------------------------------
+
+        return {
+            "vendor": vendor,
+            "temporary_password": temporary_password,
+        }
 
     # =========================================================
     # GET VENDOR BY BRANCH

@@ -1,4 +1,4 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session  # noqa: I001
 from sqlalchemy import select
 from app.modules.staff.models import Staff
 
@@ -56,4 +56,39 @@ class StaffRepository:
            db.query(Staff)
            .filter(Staff.username == username)
            .first()
+        )
+
+    @staticmethod
+    def get_vendor_by_branch(
+        db: Session,
+        branch_id: int,
+    ) -> Staff | None:
+
+        return (
+            db.query(Staff)
+            .join(Staff.role)
+            .filter(
+                Staff.branch_id == branch_id,
+                Staff.role.has(role_name="VENDOR"),
+                Staff.is_active == True,
+            )
+            .first()
+        ) 
+
+
+
+    @staticmethod
+    def get_vendor_by_branch_any_status(
+        db: Session,
+        branch_id: int,
+    ) -> Staff | None:
+
+        return (
+            db.query(Staff)
+            .join(Staff.role)
+            .filter(
+                Staff.branch_id == branch_id,
+                Staff.role.has(role_name="VENDOR"),
+            )
+            .first()
         )

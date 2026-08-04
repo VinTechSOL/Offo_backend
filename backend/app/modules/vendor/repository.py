@@ -4,7 +4,7 @@ from app.modules.staff.models import Staff
 from app.modules.staff_roles.models import StaffRole
 from app.modules.vendor.models import Cafeteria, CafeBranch
 from app.modules.locations.models import City,Campus,Building
-
+from app.modules.vendor.models import BranchDocument
 class VendorRepository:
 
     @staticmethod
@@ -21,11 +21,30 @@ class VendorRepository:
 
     @staticmethod
     def create_branch(db: Session, data):
-        branch = CafeBranch(**data.dict())
+        branch = CafeBranch(**data.model_dump())
         db.add(branch)
         db.commit()
         db.refresh(branch)
         return branch
+
+    @staticmethod
+    def create_branch_document(
+        db: Session,
+        branch_id: int,
+        document_name: str,
+        document_url: str,
+    ):
+        document = BranchDocument(
+            branch_id=branch_id,
+            document_name=document_name,
+            document_url=document_url,
+        )
+
+        db.add(document)
+        db.commit()
+        db.refresh(document)
+
+        return document
 
     @staticmethod
     def list_branches(db: Session, cafe_id: int):
@@ -61,6 +80,7 @@ class VendorRepository:
             .filter(
                 CafeBranch.cafe_id == cafe_id
             )
+            .distinct(CafeBranch.branch_id)
             .all()
         )
     
@@ -71,26 +91,51 @@ class VendorRepository:
         data,
     ):
         branch = (
-           db.query(CafeBranch)
-           .filter(CafeBranch.branch_id == branch_id)
-           .first()
+            db.query(CafeBranch)
+            .filter(CafeBranch.branch_id == branch_id)
+            .first()
         )
 
         if not branch:
             return None
 
-        branch.branch_name = data.branch_name
-        branch.city_id = data.city_id
-        branch.campus_id = data.campus_id
-        branch.building_id = data.building_id
-        branch.opens_at = data.opens_at
-        branch.closes_at = data.closes_at
-        branch.is_active = data.is_active
+        update_data = data.model_dump()
+
+        for field, value in update_data.items():
+           if hasattr(branch, field): 
+              setattr(branch, field, value)
 
         db.commit()
         db.refresh(branch)
 
         return branch
+
+
+    @staticmethod
+    def get_branch_by_id(
+        db: Session,
+        branch_id: int,
+    ):
+        return (
+            db.query(CafeBranch)
+            .filter(CafeBranch.branch_id == branch_id)
+            .first()
+        )
+
+    @staticmethod
+    def get_branch_by_owner_phone(
+        db: Session,
+        phone: str,
+    ) -> CafeBranch | None:
+
+        return (
+            db.query(CafeBranch)
+            .filter(
+               CafeBranch.owner_phone_number == phone,
+               CafeBranch.is_active == True,
+            )
+            .first()
+        )
 
 
 class CafeRepository:

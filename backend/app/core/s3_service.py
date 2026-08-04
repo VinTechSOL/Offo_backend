@@ -1,6 +1,8 @@
 import boto3
 import uuid
 from botocore.exceptions import NoCredentialsError, ClientError
+from fastapi import HTTPException, UploadFile
+
 from app.core.config import settings
 
 
@@ -9,16 +11,16 @@ from app.core.config import settings
 # -------------------------------------------------
 
 def get_s3_client():
-
     """
     Creates an S3 client that works in both:
-    - Local development (using .env credentials)
-    - AWS production (using IAM role)
+    - Local development (.env credentials)
+    - AWS production (IAM Role)
     """
 
-    if getattr(settings, "AWS_ACCESS_KEY_ID", None) and getattr(settings, "AWS_SECRET_ACCESS_KEY", None):
-
-        # Local development using .env credentials
+    if (
+        getattr(settings, "AWS_ACCESS_KEY_ID", None)
+        and getattr(settings, "AWS_SECRET_ACCESS_KEY", None)
+    ):
         return boto3.client(
             "s3",
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
@@ -26,7 +28,6 @@ def get_s3_client():
             region_name=settings.AWS_REGION,
         )
 
-    # Production (EC2 / ECS / Lambda IAM Role)
     return boto3.client(
         "s3",
         region_name=settings.AWS_REGION,
@@ -38,32 +39,86 @@ BUCKET_NAME = settings.S3_BUCKET
 
 
 # -------------------------------------------------
-# GENERIC IMAGE UPLOAD
+# FILE VALIDATION CONFIG
 # -------------------------------------------------
 
-def upload_image(
+IMAGE_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+
+DOCUMENT_TYPES = {
+    "application/pdf",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+
+MAX_IMAGE_SIZE = 5 * 1024 * 1024       # 5 MB
+MAX_DOCUMENT_SIZE = 10 * 1024 * 1024   # 10 MB
+
+
+# -------------------------------------------------
+# VALIDATE FILE
+# -------------------------------------------------
+
+def validate_upload(
+    file: UploadFile,
+    *,
+    allowed_types: set[str],
+    max_size: int,
+):
+    """
+    Validate uploaded file type and size.
+    """
+
+    if not file:
+        return
+
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported file type: {file.content_type}",
+        )
+
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+
+    if size > max_size:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Maximum allowed size is {max_size // (1024 * 1024)} MB.",
+        )
+
+
+# -------------------------------------------------
+# GENERIC FILE UPLOAD
+# -------------------------------------------------
+
+def upload_file(
     *,
     file_obj,
     filename: str | None,
     content_type: str,
     folder: str,
 ) -> str | None:
-
     """
-    Upload file to S3 inside a folder.
+    Upload any file (image/pdf/etc.) to S3.
 
-    Example keys:
-        cafe/uuid.jpg
-        menu/uuid.png
+    Example:
+        branches/images/
+        branches/documents/fssai/
+        menu/
     """
 
     try:
 
-        # Extract extension
         if filename and "." in filename:
-            ext = filename.split(".")[-1]
+            ext = filename.rsplit(".", 1)[1]
         else:
-            ext = "jpg"
+            ext = "bin"
 
         unique_filename = f"{uuid.uuid4()}.{ext}"
 
@@ -78,27 +133,26 @@ def upload_image(
             },
         )
 
-        return f"https://{BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/{key}"
+        return (
+            f"https://{BUCKET_NAME}.s3."
+            f"{settings.AWS_REGION}.amazonaws.com/{key}"
+        )
 
     except NoCredentialsError:
-
-        # Local dev safety fallback
         print("⚠️ AWS credentials not found. Skipping upload.")
         return None
 
     except ClientError as e:
-
         raise Exception(f"S3 Upload Failed: {str(e)}")
 
 
 # -------------------------------------------------
-# DELETE FILE FROM S3
+# DELETE FILE
 # -------------------------------------------------
 
 def delete_file(file_url: str):
-
     """
-    Delete a file from S3 using its URL
+    Delete file from S3 using its URL.
     """
 
     try:

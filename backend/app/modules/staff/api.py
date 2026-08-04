@@ -7,7 +7,13 @@ from app.modules.staff.schemas import (
     StaffLoginRequest,
     VendorCreateRequest,
     VendorResponse,
+    VendorCreateResponse,
     VendorUpdateRequest,
+    StaffSendOTPRequest,
+    StaffVerifyOTPRequest,
+    StaffVerifyOTPResponse,
+    StaffResetPasswordRequest,
+    StaffResetPasswordResponse,
 )
 from app.modules.staff.service import StaffAuthService
 from app.modules.orders.repository import OrderRepository
@@ -28,6 +34,64 @@ def staff_login(
         db=db,
         username=data.username,
         password=data.password
+    )
+
+# =========================================================
+# SEND RESET OTP (VENDOR)
+# =========================================================
+
+@router.post("/auth/send-reset-otp")
+def send_reset_otp(
+    payload: StaffSendOTPRequest,
+    db: Session = Depends(get_db),
+):
+    StaffAuthService.send_reset_otp(
+        db=db,
+        mobile=payload.mobile_number,
+    )
+
+    return {
+        "message": "OTP sent successfully"
+    }
+
+# =========================================================
+# VERIFY RESET OTP (VENDOR)
+# =========================================================
+
+@router.post(
+    "/auth/verify-reset-otp",
+    response_model=StaffVerifyOTPResponse,
+)
+def verify_reset_otp(
+    payload: StaffVerifyOTPRequest,
+    db: Session = Depends(get_db),
+):
+    reset_token = StaffAuthService.verify_reset_otp(
+        db=db,
+        mobile=payload.mobile_number,
+        otp=payload.otp,
+    )
+
+    return {
+        "reset_token": reset_token,
+    }
+
+# =========================================================
+# RESET PASSWORD (VENDOR)
+# =========================================================
+
+@router.post(
+    "/auth/reset-password",
+    response_model=StaffResetPasswordResponse,
+)
+def reset_password(
+    payload: StaffResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    return StaffAuthService.reset_password(
+        db=db,
+        reset_token=payload.reset_token,
+        new_password=payload.new_password,
     )
 
 
@@ -67,7 +131,7 @@ def get_my_profile(
 # =========================================================
 # CREATE VENDOR (SUPER ADMIN ONLY)
 # =========================================================
-@router.post("/vendors", response_model=VendorResponse)
+@router.post("/vendors", response_model=VendorCreateResponse)
 def create_vendor(
     payload: VendorCreateRequest,
     db: Session = Depends(get_db),
@@ -84,7 +148,6 @@ def create_vendor(
         first_name=payload.first_name,
         last_name=payload.last_name,
         username=payload.username,
-        password=payload.password,
         branch_id=payload.branch_id,
     )
 

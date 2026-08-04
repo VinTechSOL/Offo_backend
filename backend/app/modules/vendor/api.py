@@ -7,8 +7,7 @@ from app.modules.vendor.schemas import CafeteriaCreate, CafeBranchCreate, Update
 from app.modules.vendor.service import VendorService,CafeService
 from app.modules.vendor.schemas import CafeForUserResponse,UpdateBranchStatusRequest
 from app.modules.vendor.models import CafeBranch,Cafeteria
-from app.core.s3_service import upload_image
-import uuid
+
 
 router = APIRouter(prefix="/vendors", tags=["Vendors"])
 
@@ -25,47 +24,95 @@ def list_cafeterias(db: Session = Depends(get_db)):
 
 @router.post("/branches")
 def create_branch(
+    # ---------------- Basic ----------------
     cafe_id: int = Form(...),
     branch_name: str = Form(...),
+
     city_id: int = Form(...),
     campus_id: int = Form(...),
     building_id: int | None = Form(None),
+
     opens_at: time = Form(...),
     closes_at: time = Form(...),
+
+    latitude: float | None = Form(None),
+    longitude: float | None = Form(None),
+
+    # ---------------- Business ----------------
+    registered_address: str | None = Form(None),
+    business_address: str | None = Form(None),
+    business_type: str | None = Form(None),
+
+    fssai_license_number: str | None = Form(None),
+    gst_registration_number: str | None = Form(None),
+
+    # ---------------- Bank ----------------
+    bank_account_number: str | None = Form(None),
+    ifsc_code: str | None = Form(None),
+    account_holder_name: str | None = Form(None),
+
+    # ---------------- Owner ----------------
+    registered_owner_name: str | None = Form(None),
+    owner_phone_number: str | None = Form(None),
+    owner_email: str | None = Form(None),
+
+    # ---------------- Status ----------------
     is_active: bool = Form(True),
-    image: UploadFile = File(None),
-    db: Session = Depends(get_db)
+
+    # ---------------- Files ----------------
+    image: UploadFile | None = File(None),
+
+    fssai_document: UploadFile | None = File(None),
+    gst_document: UploadFile | None = File(None),
+    owner_document: UploadFile | None = File(None),
+    bank_passbook: UploadFile | None = File(None),
+
+    other_documents: list[UploadFile] | None = File(None),
+
+    db: Session = Depends(get_db),
 ):
-    image_url = None
-
-    if image:
-        ext = image.filename.split(".")[-1]
-        filename = f"{uuid.uuid4()}.{ext}"
-
-        image_url = upload_image(
-            file_obj=image.file,
-            filename=filename,
-            content_type=image.content_type,
-            folder="cafe"   # 🔥 IMPORTANT
-        )
-
-    branch = CafeBranch(
+    payload = CafeBranchCreate(
         cafe_id=cafe_id,
         branch_name=branch_name,
+
         city_id=city_id,
         campus_id=campus_id,
         building_id=building_id,
+
         opens_at=opens_at,
         closes_at=closes_at,
+
+        latitude=latitude,
+        longitude=longitude,
+
+        registered_address=registered_address,
+        business_address=business_address,
+        business_type=business_type,
+
+        fssai_license_number=fssai_license_number,
+        gst_registration_number=gst_registration_number,
+
+        bank_account_number=bank_account_number,
+        ifsc_code=ifsc_code,
+        account_holder_name=account_holder_name,
+
+        registered_owner_name=registered_owner_name,
+        owner_phone_number=owner_phone_number,
+        owner_email=owner_email,
+
         is_active=is_active,
-        image_url=image_url,
     )
 
-    db.add(branch)
-    db.commit()
-    db.refresh(branch)
-
-    return branch
+    return VendorService.create_branch(
+        db=db,
+        data=payload,
+        image=image,
+        fssai_document=fssai_document,
+        gst_document=gst_document,
+        owner_document=owner_document,
+        bank_passbook=bank_passbook,
+        other_documents=other_documents,
+    )
 
 @router.get("/cafeterias/{cafe_id}/branches")
 def list_branches(
@@ -136,23 +183,124 @@ def cafes_for_user(
     return CafeService.get_for_user(db, user.user_id)
 
 
-@router.patch("/branches/{branch_id}")
-def update_branch(
+@router.get("/branches/{branch_id}")
+def get_branch(
     branch_id: int,
-    payload: UpdateBranchRequest,
     db: Session = Depends(get_db),
     staff=Depends(get_current_staff),
 ):
     if staff.role.role_name != "SUPER_ADMIN":
         raise HTTPException(
             status_code=403,
-            detail="Access denied"
+            detail="Access denied",
         )
+
+    return VendorService.get_branch_by_id(
+        db=db,
+        branch_id=branch_id,
+    )
+
+
+@router.patch("/branches/{branch_id}")
+def update_branch(
+    branch_id: int,
+
+    # ---------------- Basic ----------------
+    branch_name: str = Form(...),
+
+    city_id: int = Form(...),
+    campus_id: int = Form(...),
+    building_id: int | None = Form(None),
+
+    opens_at: time = Form(...),
+    closes_at: time = Form(...),
+
+    latitude: float | None = Form(None),
+    longitude: float | None = Form(None),
+
+    # ---------------- Business ----------------
+    registered_address: str | None = Form(None),
+    business_address: str | None = Form(None),
+    business_type: str | None = Form(None),
+
+    # ---------------- Compliance ----------------
+    fssai_license_number: str | None = Form(None),
+    gst_registration_number: str |None = Form(None),
+
+    # ---------------- Bank ----------------
+    bank_account_number: str | None = Form(None),
+    ifsc_code: str | None = Form(None),
+    account_holder_name: str | None = Form(None),
+
+    # ---------------- Owner ----------------
+    registered_owner_name: str | None = Form(None),
+    owner_phone_number: str | None = Form(None),
+    owner_email: str | None = Form(None),
+
+    # ---------------- Status ----------------
+    is_active: bool = Form(True),
+
+    # ---------------- Files ----------------
+    image: UploadFile | None = File(None),
+
+    fssai_document: UploadFile | None = File(None),
+    gst_document: UploadFile | None = File(None),
+    owner_document: UploadFile | None = File(None),
+    bank_passbook: UploadFile |None = File(None),
+
+    other_documents: list[UploadFile] | None = File(None),
+
+    db: Session = Depends(get_db),
+    staff=Depends(get_current_staff),
+):
+
+    if staff.role.role_name != "SUPER_ADMIN":
+        raise HTTPException(
+            status_code=403,
+            detail="Access denied",
+        )
+
+    payload = UpdateBranchRequest(
+        branch_name=branch_name,
+
+        city_id=city_id,
+        campus_id=campus_id,
+        building_id=building_id,
+
+        opens_at=opens_at,
+        closes_at=closes_at,
+
+        latitude=latitude,
+        longitude=longitude,
+
+        registered_address=registered_address,
+        business_address=business_address,
+        business_type=business_type,
+
+        fssai_license_number=fssai_license_number,
+        gst_registration_number=gst_registration_number,
+
+        bank_account_number=bank_account_number,
+        ifsc_code=ifsc_code,
+        account_holder_name=account_holder_name,
+
+        registered_owner_name=registered_owner_name,
+        owner_phone_number=owner_phone_number,
+        owner_email=owner_email,
+
+        is_active=is_active,
+    )
 
     return VendorService.update_branch(
         db=db,
         branch_id=branch_id,
         data=payload,
+        image=image,
+        fssai_document=fssai_document,
+        gst_document=gst_document,
+        owner_document=owner_document,
+        bank_passbook=bank_passbook,
+        other_documents=other_documents,
     )
 
 @router.patch("/branches/{branch_id}/status")
