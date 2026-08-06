@@ -29,3 +29,20 @@ class PaymentIntentResponse(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class PaymentInitiateResponse(BaseModel):
+    intent: PaymentIntentResponse
+    checkout_url: str | None
+
+    class Config:
+        from_attributes = True
+
+
+class PaymentStatusResponse(BaseModel):
+    order_id: int
+    payment_status: str
+    intent_status: str
+    attempt_status: str | None = None
+    redirect_url: str | None = None
+    transaction_id: str | None = None

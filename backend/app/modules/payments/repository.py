@@ -30,17 +30,16 @@ class PaymentRepository:
         return intent
 
     @staticmethod
-    def create_attempt(db: Session, intent_id: int, gateway: str):
-        attempt_number = (
-            db.query(func.count(PaymentAttempt.attempt_id))
-            .filter(PaymentAttempt.intent_id == intent_id)
-            .scalar()
-            or 0
-        ) + 1
+    def create_attempt(db: Session, intent_id: int, gateway: str, merchant_order_id: str):
+        attempt_number = PaymentRepository.get_next_attempt_number(
+            db,
+            intent_id,
+        )
 
         attempt = PaymentAttempt(
             intent_id=intent_id,
             gateway=gateway,
+            merchant_order_id=merchant_order_id,
             attempt_number=attempt_number,
             status=PaymentAttemptStatus.INITIATED.value,
         )
@@ -107,4 +106,97 @@ class PaymentRepository:
             )
             .all()
         )
+
+
+    @staticmethod
+    def get_attempt_by_merchant_order_id(
+        db: Session,
+        merchant_order_id: str,
+    ):
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.merchant_order_id == merchant_order_id
+            )
+            .first()
+        )
+
+
+    @staticmethod
+    def get_latest_attempt(db: Session, intent_id: int):
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .first()
+        )
+
+
+    @staticmethod
+    def get_next_attempt_number(
+        db: Session,
+        intent_id: int,
+    ):
+        latest = (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .first()
+        )
+
+        if not latest:
+            return 1
+
+        return latest.attempt_number + 1
+
+
+    @staticmethod
+    def get_active_attempt(
+        db: Session,
+        intent_id: int,
+    ):
+        """
+        Returns the latest active payment attempt.
+
+        Active means:
+        - INITIATED
+        - REDIRECTED
+        """
+
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.status.in_([
+                    PaymentAttemptStatus.INITIATED.value,
+                    PaymentAttemptStatus.REDIRECTED.value,
+                ]),
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .first()
+        )
+
+
+    @staticmethod
+    def mark_attempt_cancelled(
+        db: Session,
+        attempt: PaymentAttempt,
+    ):
+        attempt.status = PaymentAttemptStatus.CANCELLED.value
+
+        db.commit()
+
+        db.refresh(attempt)
+
+        return attempt
 

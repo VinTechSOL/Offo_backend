@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -6,6 +6,8 @@ from app.core.security import get_current_user
 from app.modules.payments.schemas import (
     PaymentInitiateRequest,
     PaymentIntentResponse,
+    PaymentInitiateResponse,
+    PaymentStatusResponse,
 )
 from app.modules.payments.constants import PaymentGateway
 from app.modules.payments.service import PaymentService
@@ -14,17 +16,25 @@ from app.modules.payments.repository import PaymentRepository
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
 
-@router.post("/initiate", response_model=PaymentIntentResponse)
+@router.post(
+    "/initiate",
+    response_model=PaymentInitiateResponse,
+)
 def initiate_payment(
     data: PaymentInitiateRequest,
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    return PaymentService.initiate_payment(
+    result = PaymentService.initiate_payment(
         db=db,
         user_id=user.user_id,
         order_id=data.order_id,
         gateway=PaymentGateway.PHONEPE,
+    )
+
+    return PaymentInitiateResponse(
+        intent=result["intent"],
+        checkout_url=result["checkout_url"],
     )
 
 
@@ -57,3 +67,53 @@ def refund_payment(
         "refund_attempt_id": refund_attempt.attempt_id,
         "status": refund_attempt.status,
     }
+
+
+@router.get(
+    "/status/{order_id}",
+    response_model=PaymentStatusResponse,
+)
+def payment_status(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return PaymentService.get_payment_status(
+        db=db,
+        user_id=user.user_id,
+        order_id=order_id,
+    )
+
+
+@router.post(
+    "/retry/{order_id}",
+    response_model=PaymentInitiateResponse,
+)
+def retry_payment(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    result = PaymentService.retry_payment(
+        db=db,
+        user_id=user.user_id,
+        order_id=order_id,
+    )
+
+    return PaymentInitiateResponse(
+        intent=result["intent"],
+        checkout_url=result["checkout_url"],
+    )
+
+
+@router.post("/cancel/{order_id}")
+def cancel_payment(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return PaymentService.cancel_payment(
+        db=db,
+        user_id=user.user_id,
+        order_id=order_id,
+    )

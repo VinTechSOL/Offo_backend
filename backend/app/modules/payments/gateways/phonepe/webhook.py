@@ -1,15 +1,11 @@
-from datetime import datetime, timezone
-import logging
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Request
 from sqlalchemy.orm import Session
+import logging
 
 from app.core.database import get_db
-from app.modules.payments.models import PaymentAttempt
-from app.modules.payments.constants import (
-    PaymentAttemptStatus,
-    PaymentIntentStatus,
-)
-from app.modules.orders.repository import OrderRepository
+from app.modules.payments.gateways.phonepe.client import PhonePeClient
+from app.modules.payments.repository import PaymentRepository
+from app.modules.payments.service import PaymentService
 
 router = APIRouter(
     prefix="/payments/phonepe",
@@ -18,140 +14,65 @@ router = APIRouter(
 
 logger = logging.getLogger(__name__)
 
+
 @router.post("/webhook")
-def phonepe_webhook(
-    payload: dict,
+async def phonepe_webhook(
+    request: Request,
     db: Session = Depends(get_db),
 ):
-    logger.info(f"PHONEPE WEBHOOK RECEIVED: {payload}")
+    """
+    PhonePe Server-to-Server callback.
 
-    merchant_txn_id = payload.get("merchantTransactionId")
-    status = payload.get("status")
-    transaction_id = payload.get("transactionId")
+    The callback is only used as a trigger.
 
-    if not merchant_txn_id:
-        return {"status": "ignored"}
+    We NEVER trust callback payload for payment state.
+    We always fetch the latest status directly from PhonePe.
+    """
 
-    attempt = (
-        db.query(PaymentAttempt)
-        .filter(
-            PaymentAttempt.attempt_id == int(merchant_txn_id)
+    authorization = request.headers.get("Authorization")
+
+    body = await request.body()
+
+    client = PhonePeClient()
+
+    try:
+        callback = client.validate_callback(
+            authorization=authorization,
+            body=body.decode(),
         )
-        .first()
+
+    except Exception as e:
+        logger.exception("PhonePe callback validation failed")
+
+        return {
+            "status": "invalid_callback"
+        }
+
+    merchant_order_id = callback.payload.original_merchant_order_id
+
+    logger.info(
+        f"PhonePe callback received for merchant_order_id={merchant_order_id}"
+    )
+
+    attempt = PaymentRepository.get_attempt_by_merchant_order_id(
+        db,
+        merchant_order_id,
     )
 
     if not attempt:
-        return {"status": "attempt_not_found"}
 
-    # ===============================
-    # Idempotency Protection
-    # ===============================
+        logger.warning(
+            f"Attempt not found for merchant_order_id={merchant_order_id}"
+        )
 
-    if attempt.status == PaymentAttemptStatus.SUCCESS.value:
         return {
-            "status": "already_processed"
+            "status": "attempt_not_found"
         }
 
-    intent = attempt.intent
-
-    if not intent:
-        return {
-            "status": "intent_not_found"
-        }
-
-    order = OrderRepository.get_order(
-        db,
-        intent.order_id,
+    PaymentService.sync_payment_status(
+        db=db,
+        order_id=attempt.intent.order_id,
     )
-
-    if not order:
-        return {
-            "status": "order_not_found"
-        }
-
-    # Save gateway txn id if provided
-    if transaction_id:
-        attempt.gateway_transaction_id = transaction_id
-
-    # ===============================
-    # SUCCESS
-    # ===============================
-
-    if status == "SUCCESS":
-
-        attempt.status = (
-            PaymentAttemptStatus.SUCCESS.value
-        )
-
-        attempt.completed_at = datetime.now(
-            timezone.utc
-        )
-
-        if attempt.parent_payment_id:
-            # REFUND SUCCESS
-
-            intent.status = (
-                PaymentIntentStatus.REFUNDED.value
-            )
-
-            order.payment_status = "REFUNDED"
-
-            logger.info(
-                f" REFUND SUCCESS | "
-                f"order={order.order_id}"
-            )
-
-        else:
-            # PAYMENT SUCCESS
-
-            intent.status = (
-                PaymentIntentStatus.SUCCEEDED.value
-            )
-
-            order.payment_status = "PAID"
-
-            logger.info(
-                f" PAYMENT SUCCESS | "
-                f"order={order.order_id}"
-            )
-
-    # ===============================
-    # FAILURE
-    # ===============================
-
-    else:
-
-        attempt.status = (
-            PaymentAttemptStatus.FAILED.value
-        )
-
-        attempt.completed_at = datetime.now(
-            timezone.utc
-        )
-
-        if attempt.parent_payment_id:
-
-            intent.status = (
-                PaymentIntentStatus.REFUND_FAILED.value
-            )
-
-            logger.info(
-                f" REFUND FAILED | "
-                f"order={order.order_id}"
-            )
-
-        else:
-
-            intent.status = (
-                PaymentIntentStatus.FAILED.value
-            )
-
-            logger.info(
-                f" PAYMENT FAILED | "
-                f"order={order.order_id}"
-            )
-
-    db.commit()
 
     return {
         "status": "ok"

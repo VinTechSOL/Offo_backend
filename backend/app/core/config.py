@@ -14,6 +14,16 @@ class Settings(BaseSettings):
     AWS_SECRET_ACCESS_KEY: str | None = None
     AWS_REGION : str
     S3_BUCKET: str
+    
+    PHONEPE_CLIENT_ID: str
+    PHONEPE_CLIENT_SECRET: str
+    PHONEPE_CLIENT_VERSION: int
+    PHONEPE_ENV: str = "SANDBOX"
+
+    PHONEPE_CALLBACK_USERNAME: str
+    PHONEPE_CALLBACK_PASSWORD: str
+
+    PHONEPE_REDIRECT_URL: str
 
 
     model_config = {
