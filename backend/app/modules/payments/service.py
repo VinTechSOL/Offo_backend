@@ -9,6 +9,7 @@ from app.modules.payments.constants import (
     PaymentIntentStatus,
     PaymentAttemptStatus
 )
+from requests.exceptions import ReadTimeout, ConnectionError
 from app.modules.payments.gateways.phonepe.client import PhonePeClient
 from app.modules.payments.utils import generate_merchant_order_id
 from phonepe.sdk.pg.common.exceptions import PhonePeException
@@ -83,6 +84,10 @@ class PaymentService:
                     amount=int(intent.amount * 100),  # INR → paise
                     user_id=user_id,
                 )
+
+                logger.info("Phonepe initiate response: %s", response)
+                logger.info("phonepe redirect url : %s", response.get("redirect_url"),)
+                logger.info("phonepe order id: %s", response.get("phonepe_order_id"),)
                 
             except PhonePeException as e:
                 logger.exception(
@@ -336,6 +341,21 @@ class PaymentService:
             status = client.get_order_status(
                 payment_attempt.merchant_order_id,
             )
+
+            logger.info("========== PHONEPE STATUS ==========")
+            logger.info(status)
+            logger.info("State : %s", status.get("state"))
+            logger.info("Payment Details : %s", status.get("payment_details"))
+            logger.info("===================================")
+
+            logger.info("status dict: %s", status)
+
+        except (ReadTimeout, ConnectionError):
+            logger.warning(
+                "PhonePe Order status timed out. Will retry"
+            )
+
+            return intent
 
         except PhonePeException as e:
             logger.exception(

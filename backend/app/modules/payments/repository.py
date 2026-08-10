@@ -200,3 +200,20 @@ class PaymentRepository:
 
         return attempt
 
+
+    @staticmethod
+    def save_phonepe_order(
+        db: Session,
+        attempt: PaymentAttempt,
+        phonepe_order_id: str,
+        response: dict,
+    ):
+        attempt.phonepe_order_id = phonepe_order_id
+        attempt.response_payload = response
+        attempt.status = PaymentAttemptStatus.REDIRECTED.value
+
+        db.commit()
+        db.refresh(attempt)
+
+        return attempt
+

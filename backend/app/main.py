@@ -5,7 +5,7 @@ from sqlalchemy import text
 from contextlib import asynccontextmanager
 from app.core.database import get_db, engine
 from app.core.redis import redis_client
-import os
+
 from app.modules.auth.api import router as auth_router
 from app.modules.users.api import router as users_router
 from app.modules.vendor.api import router as vendor_router
@@ -16,7 +16,6 @@ from app.modules.notifications.api import router as notifications_router
 from app.modules.staff.api import router as staff_auth_router
 from app.modules.payments.api import router as payments_router
 from app.modules.locations.api import router as locations_router
-from app.workers.dev_scheduler import start_scheduler,shutdown_scheduler
 from app.modules.payments.gateways.phonepe.webhook import router as phonepe_webhook_router
 from app.modules.reports.api import router as reports_router
 from app.modules.crm.api import router as crm_router
@@ -62,3 +61,8 @@ app.add_middleware(RateLimitMiddleware)
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+
+
+

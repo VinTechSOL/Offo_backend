@@ -31,6 +31,13 @@ async def phonepe_webhook(
 
     authorization = request.headers.get("Authorization")
 
+    if not authorization:
+        logger.warning("Missing Authorization header")
+
+        return {
+            "status": "missing_authorization",
+        }
+
     body = await request.body()
 
     client = PhonePeClient()
@@ -42,16 +49,26 @@ async def phonepe_webhook(
         )
 
     except Exception as e:
-        logger.exception("PhonePe callback validation failed")
+        logger.exception("PhonePe callback validation failed : %s", str(e))
 
         return {
             "status": "invalid_callback"
         }
 
-    merchant_order_id = callback.payload.original_merchant_order_id
+    merchant_order_id = getattr(
+        callback.payload,
+        "original_merchant_order_id",
+        None,
+    )
+
+    if not merchant_order_id:
+        logger.warning("Merchant order id missing in callback")
+        return {
+            "status": "invalid_payload",
+        }
 
     logger.info(
-        f"PhonePe callback received for merchant_order_id={merchant_order_id}"
+        "PhonePe callback received for merchant_order_id=%s",merchant_order_id
     )
 
     attempt = PaymentRepository.get_attempt_by_merchant_order_id(
@@ -62,17 +79,33 @@ async def phonepe_webhook(
     if not attempt:
 
         logger.warning(
-            f"Attempt not found for merchant_order_id={merchant_order_id}"
+            "Attempt not found for merchant_order_id=%s",merchant_order_id
         )
 
         return {
             "status": "attempt_not_found"
         }
 
-    PaymentService.sync_payment_status(
-        db=db,
-        order_id=attempt.intent.order_id,
+    try:
+        PaymentService.sync_payment_status(
+            db=db,
+            order_id=attempt.intent.order_id,
+        )
+
+    except Exception:
+        logger.exception(
+            "Failed to sync payment status for %s", merchant_order_id,
+        )
+
+        return {
+            "status": "sync_failed",
+        }
+
+    logger.info(
+        "payment synced successfully for %s", merchant_order_id,
     )
+
+    
 
     return {
         "status": "ok"
