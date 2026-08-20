@@ -4,6 +4,9 @@ import logging
 from phonepe.sdk.pg.payments.v2.models.request.standard_checkout_pay_request import (
     StandardCheckoutPayRequest,
 )
+from phonepe.sdk.pg.common.models.request.refund_request import (
+    RefundRequest,
+)
 from phonepe.sdk.pg.common.models.request.meta_info import MetaInfo
 
 
@@ -163,3 +166,139 @@ class PhonePeClient:
             "detailed_error_code": getattr(response,"detailed_error_code",None),
             "payment_details": payment_details,
         }
+
+
+
+    def initiate_refund(
+        self,
+        *,
+        merchant_refund_id: str,
+        amount: int,
+        original_merchant_order_id: str,
+    ):
+        """
+        Initiate a PhonePe refund.
+
+        amount -> paisa
+
+        original_merchant_order_id:
+            The merchant order ID used for the
+            original successful payment.
+        """
+
+        logger = logging.getLogger(__name__)
+
+        refund_request = RefundRequest.build_refund_request(
+            merchant_refund_id=merchant_refund_id,
+            amount=amount,
+            original_merchant_order_id=original_merchant_order_id,
+        )
+
+        logger.info(
+            "========== PHONEPE REFUND INITIATED =========="
+        )
+        logger.info(
+            "Merchant Refund ID       : %s",
+            merchant_refund_id,
+        )
+        logger.info(
+            "Original Merchant Order : %s",
+            original_merchant_order_id,
+        )
+        logger.info(
+            "Refund Amount (paise)    : %s",
+            amount,
+        )
+
+        response = self.client.refund(refund_request)
+
+        logger.info(
+            "PhonePe Refund Response | "
+            "refund_id=%s state=%s amount=%s",
+            response.refund_id,
+            response.state,
+            response.amount,
+        )
+
+        return {
+            "merchant_refund_id": merchant_refund_id,
+            "refund_id": response.refund_id,
+            "amount": response.amount,
+            "state": response.state,
+        }
+
+
+    def get_refund_status(
+        self,
+        merchant_refund_id: str,
+    ):
+        """
+        Fetch the latest refund status from PhonePe.
+        """
+
+        logger = logging.getLogger(__name__)
+
+        response = self.client.get_refund_status(
+            merchant_refund_id=merchant_refund_id,
+        )
+
+        payment_details = []
+
+        for detail in response.payment_details or []:
+            payment_details.append(
+                {
+                    "transaction_id": detail.transaction_id,
+                    "payment_mode": (
+                        detail.payment_mode.value
+                        if hasattr(detail.payment_mode, "value")
+                        else str(detail.payment_mode)
+                        if detail.payment_mode
+                        else None
+                    ),
+                    "timestamp": detail.timestamp,
+                    "amount": detail.amount,
+                    "state": detail.state,
+                    "error_code": detail.error_code,
+                    "detailed_error_code": detail.detailed_error_code,
+                }
+            )
+
+        result = {
+            "merchant_id": response.merchant_id,
+            "merchant_refund_id": response.merchant_refund_id,
+            "original_merchant_order_id": (
+                response.original_merchant_order_id
+            ),
+            "amount": response.amount,
+            "state": response.state,
+            "payment_details": payment_details,
+        }
+
+        logger.info(
+            "========== PHONEPE REFUND STATUS =========="
+        )
+        logger.info(
+            "Merchant Refund ID : %s",
+            response.merchant_refund_id,
+        )
+        logger.info(
+            "Original Order     : %s",
+            response.original_merchant_order_id,
+        )
+        logger.info(
+            "State              : %s",
+            response.state,
+        )
+        logger.info(
+            "Amount             : %s",
+            response.amount,
+        )
+        logger.info(
+            "Payment Details    : %s",
+            payment_details,
+        )
+        logger.info(
+            "============================================"
+        )
+
+        return result

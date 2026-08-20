@@ -70,7 +70,21 @@ class PaymentAttempt(Base):
         unique=True,
     )
     
-    gateway_transaction_id: Mapped[str | None] = mapped_column(String(100), unique=True)
+    gateway_transaction_id: Mapped[str | None] = mapped_column(
+        String(100),
+        unique=True,
+    )
+
+    merchant_refund_id: Mapped[str | None] = mapped_column(
+        String(100),
+        unique=True,
+    )
+
+    gateway_refund_id: Mapped[str | None] = mapped_column(
+        String(100),
+       unique=True,
+    )
+    
 
     attempt_number: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False)

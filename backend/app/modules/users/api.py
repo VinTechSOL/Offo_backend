@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends,HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user
-from app.modules.users.schemas import UserProfileUpdate, AddressCreate
+from app.modules.users.schemas import UserProfileUpdate, AddressCreate, UserOrderDetailResponse
 from app.modules.users.service import UserService
 from app.modules.users.order_service import UserOrderService
 from app.modules.orders.repository import OrderRepository
@@ -45,9 +45,24 @@ def get_my_active_orders(
     orders = UserOrderService.list_orders(db, user.user_id)
     return [
         o for o in orders
-        if o["order_status"] in ["CREATED", "ACCEPTED", "PREPARING", "READY"]
+        if o["classification"] == "ONGOING"
     ]
 
+@router.get("/orders/scheduled")
+def get_my_scheduled_orders(
+    db: Session = Depends(get_db),
+    user = Depends(get_current_user),
+):
+    orders = UserOrderService.list_orders(
+        db,
+        user.user_id,
+    )
+
+    return [
+        order
+        for order in orders
+        if order["classification"] == "SCHEDULED"
+    ]
 
 @router.get("/orders")
 def list_my_orders(
@@ -57,7 +72,7 @@ def list_my_orders(
     return UserOrderService.list_orders(db, user.user_id)
 
 
-@router.get("/orders/{order_id}")
+@router.get("/orders/{order_id}", response_model=UserOrderDetailResponse)
 def get_my_order(
     order_id: int,
     db: Session = Depends(get_db),

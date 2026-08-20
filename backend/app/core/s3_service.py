@@ -150,24 +150,33 @@ def upload_file(
 # DELETE FILE
 # -------------------------------------------------
 
-def delete_file(file_url: str):
+def delete_file(file_url: str | None):
     """
-    Delete file from S3 using its URL.
+    Delete file from S3 using its generated S3 URL.
     """
+
+    if not file_url:
+        return
 
     try:
+        prefix = (
+            f"https://{BUCKET_NAME}.s3."
+            f"{settings.AWS_REGION}.amazonaws.com/"
+        )
 
-        if not file_url:
+        if not file_url.startswith(prefix):
+            print("Invalid S3 file URL. Skipping delete.")
             return
 
-        key = file_url.split(
-            f"{BUCKET_NAME}.s3.{settings.AWS_REGION}.amazonaws.com/"
-        )[1]
+        key = file_url[len(prefix):]
+
+        if not key:
+            return
 
         s3.delete_object(
             Bucket=BUCKET_NAME,
             Key=key,
         )
 
-    except Exception as e:
+    except ClientError as e:
         print(f"S3 Delete failed: {str(e)}")

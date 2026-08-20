@@ -22,7 +22,7 @@ class Order(Base):
 
     total_amount: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
     order_status: Mapped[str] = mapped_column(String(30), nullable=False)
-    payment_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    payment_status: Mapped[str] = mapped_column(String(30), nullable=False, default="PENDING")
 
     repeat_weekly: Mapped[bool] = mapped_column(default=False)
     repeat_remaining: Mapped[int | None] = mapped_column(nullable=True)
@@ -74,4 +74,56 @@ class OrderStatusLog(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(timezone.utc),
+    )
+
+
+
+class PaymentEvent(Base):
+    __tablename__ = "payment_events"
+    __table_args__ = {"schema": "orders"}
+
+    id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True
+    )
+
+    order_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "orders.orders.order_id",
+            ondelete="CASCADE"
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    event_type: Mapped[str] = mapped_column(
+        String(40),
+        nullable=False,
+    )
+
+    payment_status: Mapped[str] = mapped_column(
+        String(30),
+        nullable=False,
+    )
+
+    amount: Mapped[float | None] = mapped_column(
+        Numeric(10, 2),
+        nullable=True,
+    )
+
+    provider_reference: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    provider_transaction_id: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        nullable=False,
     )

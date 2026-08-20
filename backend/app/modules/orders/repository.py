@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session,joinedload
 from sqlalchemy import select, or_, and_,func
 from datetime import datetime, timedelta, timezone,date
-
 from app.modules.menu.models import MenuItem
-from app.modules.orders.models import Order, OrderItem,OrderStatusLog
-from app.modules.orders.constants import OrderStatus
+from app.modules.orders.models import Order, OrderItem,OrderStatusLog, PaymentEvent
+from app.modules.orders.constants import OrderStatus, PaymentStatus
+from app.modules.orders.payment_events import PaymentEventType
 from app.modules.vendor.models import CafeBranch as Cafe
 from app.modules.users.models import User
 from app.modules.locations.models import Campus,Building
@@ -59,6 +59,26 @@ class OrderRepository:
             )
         )
         return db.execute(stmt).scalar_one_or_none()
+
+
+    @staticmethod
+    def get_user_order_with_cafe(
+        db: Session,
+        user_id: int,
+        order_id: int,
+    ):
+        return (
+            db.query(Order, Cafe)
+            .join(
+                Cafe,
+                Cafe.cafe_id == Order.cafe_id,
+            )
+            .filter(
+                Order.order_id == order_id,
+                Order.user_id == user_id,
+            )
+            .first()
+        )
 
     
     @staticmethod
@@ -135,6 +155,7 @@ class OrderRepository:
             .join(Building, Building.building_id == Cafe.building_id)
             .filter(
                 Order.branch_id == branch_id,
+                Order.payment_status == PaymentStatus.PAID,
                 Order.order_status == OrderStatus.CREATED,
                 or_(
                    Order.order_type == "INSTANT",
@@ -151,8 +172,6 @@ class OrderRepository:
         results = []
 
         for o, first, last, campus, building in rows:
-            if calculate_priority(o) == OrderPriority.EXPIRED:
-                continue
 
             results.append({
                "order_id": o.order_id,
@@ -211,6 +230,7 @@ class OrderRepository:
             .filter(
                 Order.branch_id == branch_id,
                 Order.order_type == "SCHEDULED",
+                Order.payment_status == PaymentStatus.PAID,
                 Order.order_status == OrderStatus.CREATED,
                 Order.scheduled_time > visibility_until,
             )
@@ -278,6 +298,7 @@ class OrderRepository:
             .join(Building, Building.building_id == Cafe.building_id)
             .filter(
                 Order.branch_id == branch_id,
+                Order.payment_status == PaymentStatus.PAID,
                 Order.created_at >= start_of_day,
                 Order.created_at < end_of_day,
             )
@@ -384,29 +405,7 @@ class OrderRepository:
     # Scheduler helpers
     # -----------------------------
 
-    @staticmethod
-    def fetch_orders_to_expire(db: Session):
-        grace_limit = now_utc() - timedelta(minutes=5)
-
-        stmt = select(Order).where(
-            Order.order_type == "SCHEDULED",
-            Order.order_status == OrderStatus.CREATED,
-            Order.scheduled_time < grace_limit
-        )
-
-        return db.execute(stmt).scalars().all()
     
-    
-
-    @staticmethod
-    def expire_orders(db: Session, orders):
-        now = now_utc()
-
-        for order in orders:
-            order.order_status = OrderStatus.CANCELLED
-            order.updated_at = now
-
-        db.commit()
 
     @staticmethod
     def mark_visible_for_vendor(db, window_minutes: int):
@@ -414,26 +413,11 @@ class OrderRepository:
         # Visibility is computed dynamically
         pass
 
-    @staticmethod
-    def expire_unaccepted_scheduled_orders(db, grace_minutes: int):
-        now = now_utc()
-        expiry_time = now - timedelta(minutes=grace_minutes)
-
-        db.query(Order).filter(
-            Order.order_type == "SCHEDULED",
-            Order.order_status == OrderStatus.CREATED,
-            Order.scheduled_time < expiry_time
-        ).update(
-            {
-                "order_status": OrderStatus.EXPIRED,
-                "updated_at": now
-            },
-            synchronize_session=False
-        )
+   
 
 
     @staticmethod
-    def get_live_orders(db: Session, branch_id: int, window_minutes: int = 60):
+    def get_live_orders(db: Session, branch_id: int, window_minutes: int = LIVE_WINDOW_MINUTES):
         """
         Live screen shows:
         - All INSTANT orders (CREATED, PREPARING, READY)
@@ -441,7 +425,7 @@ class OrderRepository:
         """
 
         now = now_utc()
-        visibility_until = now + timedelta(minutes=LIVE_WINDOW_MINUTES)
+        visibility_until = now + timedelta(minutes=window_minutes)
 
         rows = (
             db.query(
@@ -457,6 +441,7 @@ class OrderRepository:
             .join(Building, Building.building_id == Cafe.building_id)
             .filter(
                 Order.branch_id == branch_id,
+                Order.payment_status == PaymentStatus.PAID,
                 Order.order_status.in_([
                     OrderStatus.CREATED,
                     OrderStatus.PREPARING,
@@ -517,6 +502,7 @@ class OrderRepository:
             db.query(Order)
             .filter(
                 Order.branch_id == branch_id,
+                Order.payment_status == PaymentStatus.PAID,
                 Order.order_status.in_([
                     OrderStatus.COMPLETED,
                     OrderStatus.CANCELLED,
@@ -535,6 +521,7 @@ class OrderRepository:
             db.query(Order)
             .filter(
                 Order.branch_id == branch_id,
+                Order.payment_status == PaymentStatus.PAID,
                 Order.order_status == OrderStatus.CREATED,
             )
             .order_by(Order.created_at.desc())
@@ -616,6 +603,45 @@ class OrderRepository:
             })
 
         return results
+
+
+    @staticmethod
+    def add_payment_event(
+        db,
+        *,
+        order_id: int,
+        event_type: PaymentEventType,
+        payment_status: PaymentStatus,
+        amount=None,
+        provider_reference=None,
+        provider_transaction_id=None,
+    ):
+        event = PaymentEvent(
+            order_id=order_id,
+            event_type=event_type,
+            payment_status=payment_status,
+            amount=amount,
+            provider_reference=provider_reference,
+            provider_transaction_id=provider_transaction_id,
+        )
+
+        db.add(event)
+
+        return event
+
+
+    @staticmethod
+    def get_payment_timeline(db: Session, order_id: int):
+        return (
+            db.query(PaymentEvent)
+            .filter(
+                PaymentEvent.order_id == order_id
+            )
+            .order_by(
+                PaymentEvent.created_at.asc()
+            )
+            .all()
+        )
 
 
 

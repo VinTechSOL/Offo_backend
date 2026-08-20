@@ -12,6 +12,8 @@ from app.modules.payments.schemas import (
 from app.modules.payments.constants import PaymentGateway
 from app.modules.payments.service import PaymentService
 from app.modules.payments.repository import PaymentRepository
+from app.modules.orders.repository import OrderRepository
+
 
 router = APIRouter(prefix="/payments", tags=["Payments"])
 
@@ -44,7 +46,35 @@ def get_payment_for_order(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    return PaymentRepository.get_intent_by_order(db, order_id)
+    order = OrderRepository.get_order(
+        db,
+        order_id,
+    )
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found",
+        )
+
+    if order.user_id != user.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized",
+        )
+
+    intent = PaymentRepository.get_intent_by_order(
+        db,
+        order_id,
+    )
+
+    if not intent:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment not found",
+        )
+
+    return intent
 
 
 @router.post("/refund/{order_id}")
@@ -53,10 +83,7 @@ def refund_payment(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
-    """
-    Trigger refund for a paid order (FULL REFUND)
-    """
-    refund_attempt = PaymentService.initiate_refund(
+    result = PaymentService.initiate_refund(
         db=db,
         order_id=order_id,
         user_id=user.user_id,
@@ -64,9 +91,78 @@ def refund_payment(
 
     return {
         "message": "Refund initiated",
-        "refund_attempt_id": refund_attempt.attempt_id,
-        "status": refund_attempt.status,
+        "order_id": order_id,
+        "refund_attempt_id": (
+            result["refund_attempt"].attempt_id
+        ),
+        "merchant_refund_id": result["merchant_refund_id"],
+        "refund_id": result["refund_id"],
+        "state": result["state"],
+        "amount": result["amount"],
     }
+
+@router.get(
+    "/refund/status/{order_id}",
+)
+def refund_status(
+    order_id: int,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    order = OrderRepository.get_order(
+        db,
+        order_id,
+    )
+
+    if not order:
+        raise HTTPException(
+            status_code=404,
+            detail="Order not found",
+        )
+
+    if order.user_id != user.user_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Unauthorized",
+        )
+
+    intent = PaymentService.sync_refund_status(
+        db=db,
+        order_id=order_id,
+    )
+
+    refund_attempt = PaymentRepository.get_refund_attempt(
+        db,
+        intent.intent_id,
+    )
+
+    return {
+        "order_id": order_id,
+        "payment_status": order.payment_status,
+        "intent_status": intent.status,
+        "refund_attempt_status": (
+            refund_attempt.status
+            if refund_attempt
+            else None
+        ),
+        "merchant_refund_id": (
+            refund_attempt.merchant_refund_id
+            if refund_attempt
+            else None
+        ),
+        "gateway_refund_id": (
+            refund_attempt.gateway_refund_id
+            if refund_attempt
+            else None
+        ),
+
+        "refund_transaction_id": (
+            refund_attempt.gateway_transaction_id
+            if refund_attempt
+            else None
+        ),
+    }
+
 
 
 @router.get(

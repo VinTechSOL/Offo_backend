@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from app.core.database import get_db
 from app.core.security import get_current_staff,get_current_user
-from app.modules.orders.schemas import PlaceOrderRequest, PlaceOrderResponse
+from app.modules.orders.schemas import PlaceOrderRequest, PlaceOrderResponse, MoveOrderRequest
 from app.modules.orders.service import OrderService
 from app.modules.orders.service import VendorOrderService
 from app.modules.orders.repository import OrderRepository
@@ -81,14 +81,14 @@ def reject_order(
 @router.post("/{order_id}/move")
 def move_order(
     order_id: int,
-    status: OrderStatus,   # now VALID
+    data: MoveOrderRequest,   # now VALID
     db: Session = Depends(get_db),
     staff = Depends(get_current_staff),
 
 ):
     require_permission(staff,"MOVE_ORDER")
     return VendorOrderService.move_order(
-        db=db, order_id=order_id, staff=staff, next_status=status,
+        db=db, order_id=order_id, staff=staff, next_status=data.status,
     )
 
 
@@ -141,33 +141,3 @@ def get_order_alerts(
         staff.branch_id
     )
 
-
-'''
-@router.get("/scheduled")
-def scheduled_orders(
-    filter: str = Query(..., enum=["today", "tomorrow", "date"]),
-    date_param: date | None = Query(None, alias="date"),
-    db: Session = Depends(get_db),
-    staff = Depends(get_current_staff)
-):
-    today = date.today()
-
-    if filter == "today":
-        target_date = today
-    elif filter == "tomorrow":
-        target_date = today + timedelta(days=1)
-    else:
-        if not date_param:
-            raise HTTPException(400, "date required")
-        target_date = date_param
-
-    return OrderRepository.get_scheduled_orders_for_date(
-        db,
-        staff.branch_id,
-        target_date
-    )
-'''
-
-
-    
-   

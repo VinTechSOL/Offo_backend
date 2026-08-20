@@ -1,7 +1,7 @@
-from pydantic import BaseModel
-from typing import Optional,List
+from pydantic import BaseModel, Field
+from typing import Optional
 from datetime import date ,datetime
-
+from app.modules.orders.constants import PaymentStatus,OrderStatus
 
 class ScheduleItem(BaseModel):
     scheduled_date: date
@@ -9,7 +9,9 @@ class ScheduleItem(BaseModel):
 
 class PlaceOrderRequest(BaseModel):
     order_type: str  # INSTANT / SCHEDULED
-    schedules: list[ScheduleItem] = []
+    schedules: list[ScheduleItem] = Field(
+        default_factory=list
+    )
     repeat_weekly: bool = False
 
 
@@ -36,8 +38,8 @@ class OrderResponse(BaseModel):
 
     # Order info
     order_type: str                 # INSTANT / SCHEDULED
-    order_status: str               # CREATED / ACCEPTED / PREPARING / READY / COMPLETED
-    payment_status: str             # PENDING / PAID / FAILED
+    order_status: OrderStatus      # CREATED / ACCEPTED / PREPARING / READY / COMPLETED
+    payment_status: PaymentStatus            # PENDING / PAID / FAILED
 
     # Timing
     scheduled_time: Optional[datetime] = None
@@ -52,7 +54,9 @@ class OrderResponse(BaseModel):
     is_scheduled: Optional[bool] = None 
 
     # Items
-    items: List[OrderItemResponse] = []
+    items: list[OrderItemResponse] = Field(
+        default_factory=list
+    )
 
     class Config:
         orm_mode = True
@@ -66,3 +70,7 @@ class OrderTimelineItem(BaseModel):
 
     class Config:
         from_attributes = True
+
+
+class MoveOrderRequest(BaseModel):
+    status: OrderStatus
