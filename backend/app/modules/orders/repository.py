@@ -272,6 +272,22 @@ class OrderRepository:
     @staticmethod
     def get_all_today_orders(db: Session, branch_id: int):
 
+        """
+        Return all orders created today for the branch.
+
+        Today Orders is an order-history/operational view.
+        Therefore it must NOT depend on payment_status.
+
+        Payment status is returned separately so the frontend
+        can distinguish:
+
+            PAID
+            REFUND_PENDING
+            REFUNDED
+            FAILED
+            etc.
+        """
+
         now = now_utc()
 
         # Start of today (UTC)
@@ -298,7 +314,6 @@ class OrderRepository:
             .join(Building, Building.building_id == Cafe.building_id)
             .filter(
                 Order.branch_id == branch_id,
-                Order.payment_status == PaymentStatus.PAID,
                 Order.created_at >= start_of_day,
                 Order.created_at < end_of_day,
             )

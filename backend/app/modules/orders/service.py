@@ -483,6 +483,22 @@ class VendorOrderService:
         order_id: int,
         staff,
     ):
+
+        """
+        Reject a CREATED + PAID order.
+
+        Flow:
+
+            CREATED + PAID
+                ↓
+            REJECTED + REFUND_PENDING
+                ↓
+            Refund processor
+                ↓
+            PhonePe refund
+
+        The PhonePe gateway is NOT called here.
+        """
         order = db.get(Order, order_id)
 
         if not order:
@@ -507,7 +523,7 @@ class VendorOrderService:
         if order.payment_status != PaymentStatus.PAID:
             raise HTTPException(
                 status_code=400,
-                detail="Order payment is not completed",
+                detail="Only paid orders can be rejected",
             )
 
         # --------------------------------------------------------
@@ -519,9 +535,10 @@ class VendorOrderService:
         # --------------------------------------------------------
         # CREATED → REJECTED
         # --------------------------------------------------------
+        current_status = OrderStatus(order.order_status)
 
         validate_transition(
-            OrderStatus(order.order_status),
+            current_status,
             OrderStatus.REJECTED,
         )
 
@@ -540,10 +557,18 @@ class VendorOrderService:
         # Paid rejected order → refund pending
         # --------------------------------------------------------
 
-        OrderPaymentService.mark_refund_pending_in_transaction(
-            db=db,
-            order=order,
+        refund_pending = (
+            OrderPaymentService.mark_refund_pending_in_transaction(
+                db=db,
+                order=order,
+            )
         )
+
+        # --------------------------------------------------------
+        # IMPORTANT:
+        #
+        # Order rejection + REFUND_PENDING are committed together.
+        # --------------------------------------------------------
 
         db.commit()
         db.refresh(order)
@@ -573,6 +598,7 @@ class VendorOrderService:
             "order_id": order.order_id,
             "status": order.order_status,
             "payment_status": order.payment_status,
+            "refund_pending": refund_pending,
         }
 
     # ============================================================

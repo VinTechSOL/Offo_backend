@@ -2,8 +2,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from app.modules.support.models import (
-    Ticket,
-    Feedback,
+    Ticket,Feedback,
 )
 
 from app.modules.support.repository import (
@@ -20,6 +19,13 @@ from app.modules.orders.constants import (
 
 from app.modules.orders.repository import (
     OrderRepository,
+)
+
+from app.modules.notifications.service import NotificationService
+from app.modules.notifications.constants import (
+    NotificationRecipient,
+    NotificationPriority,
+    NotificationEvent,
 )
 
 
@@ -310,6 +316,10 @@ class SupportService:
                 detail="Ticket not found",
             )
 
+        # Keep the old status so we only notify when
+        # an actual status change happens.
+        old_status = ticket.status
+
         SupportRepository.update_ticket_status(
             db,
             ticket,
@@ -318,6 +328,29 @@ class SupportService:
 
         db.commit()
         db.refresh(ticket)
+
+        # ---------------------------------------------
+        # Notify user when ticket status changes
+        # ---------------------------------------------
+
+        if old_status != ticket.status:
+
+            display_ticket_id = f"TKT-{ticket.ticket_id:06d}"
+
+            NotificationService.trigger(
+                db,
+                event=NotificationEvent.TICKET_STATUS_CHANGED,
+                recipient_type=NotificationRecipient.USER,
+                recipient_id=ticket.user_id,
+                title="Support Ticket Updated",
+                message=(
+                    f"Hey! Your support ticket {display_ticket_id} "
+                    f"is now {ticket.status}."
+                ),
+                priority=NotificationPriority.MEDIUM,
+                order_id=ticket.order_id,
+           )
+
 
         return ticket
 
