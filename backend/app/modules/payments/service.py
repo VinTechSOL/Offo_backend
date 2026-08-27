@@ -551,6 +551,84 @@ class PaymentService:
             "checkout_url": response["redirect_url"],
         }
 
+
+    # ============================================================
+    # REFUND AMOUNT
+    # ============================================================
+
+    @staticmethod
+    def _get_refund_amount(
+        db: Session,
+        intent: PaymentIntent,
+        order_id: int,
+        order_total: float,
+    ) -> float:
+        """
+        Determine the refund amount for an order.
+
+        Single-order PaymentIntent:
+            Refund the complete PaymentIntent amount.
+
+            Example:
+                Order amount  = ₹1.00
+                Platform fee  = ₹5.00
+                GST            = ₹0.90
+                ------------------------
+                Paid            = ₹6.90
+
+                Refund         = ₹6.90
+
+        Multi-order PaymentIntent:
+            Refund only the specific order amount for now.
+
+            Shared checkout-fee allocation will be handled
+            separately in the multi-order refund phase.
+        """
+
+        order_ids = PaymentRepository.get_order_ids_for_intent(
+            db=db,
+            intent_id=intent.intent_id,
+        )
+
+        # --------------------------------------------------------
+        # Backward compatibility for legacy single-order intents
+        # --------------------------------------------------------
+
+        if not order_ids:
+            order_ids = [intent.order_id]
+
+        # --------------------------------------------------------
+        # SINGLE-ORDER PAYMENT
+        # --------------------------------------------------------
+
+        if len(order_ids) == 1:
+            if order_ids[0] != order_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Order does not belong to payment intent",
+                )
+
+            refund_amount = float(intent.amount)
+
+        # --------------------------------------------------------
+        # MULTI-ORDER PAYMENT
+        # --------------------------------------------------------
+
+        else:
+            refund_amount = float(order_total)
+
+        # --------------------------------------------------------
+        # Validate
+        # --------------------------------------------------------
+
+        if refund_amount <= 0:
+            raise HTTPException(
+                status_code=400,
+                detail="Invalid refund amount",
+            )
+
+        return refund_amount
+
     # ============================================================
     # INITIATE REFUND
     # ============================================================
@@ -676,7 +754,12 @@ class PaymentService:
         # ------------------------------------------------------------
         # Refund amount belongs to THIS order
         # ------------------------------------------------------------
-        refund_amount = float(order.total_amount)
+        refund_amount = PaymentService._get_refund_amount(
+            db=db,
+            intent=intent,
+            order_id=order_id,
+            order_total=float(order.total_amount),
+        )
 
         if refund_amount <= 0:
             raise HTTPException(
@@ -1579,7 +1662,12 @@ class PaymentService:
         # ------------------------------------------------------------
         # Refund THIS order only
         # ------------------------------------------------------------
-        refund_amount = float(order.total_amount)
+        refund_amount = PaymentService._get_refund_amount(
+            db=db,
+            intent=intent,
+            order_id=order_id,
+            order_total=float(order.total_amount),
+        )
 
         if refund_amount <= 0:
             raise HTTPException(
