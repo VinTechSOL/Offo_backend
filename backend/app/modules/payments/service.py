@@ -9,7 +9,7 @@ from phonepe.sdk.pg.common.exceptions import PhonePeException
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.payment_service import OrderPaymentService
 from app.modules.orders.constants import PaymentStatus, OrderStatus
-from app.modules.payments.models import PaymentIntent
+from app.modules.payments.models import PaymentIntent, PaymentIntentOrder
 from app.modules.payments.repository import PaymentRepository
 from app.modules.payments.constants import (
     PaymentGateway,
@@ -556,70 +556,54 @@ class PaymentService:
     # REFUND AMOUNT
     # ============================================================
 
+    # ============================================================
+    # REFUND AMOUNT
+    # ============================================================
+
     @staticmethod
     def _get_refund_amount(
         db: Session,
         intent: PaymentIntent,
         order_id: int,
-        order_total: float,
     ) -> float:
         """
-        Determine the refund amount for an order.
+        Get the exact amount originally paid for this order.
 
-        Single-order PaymentIntent:
-            Refund the complete PaymentIntent amount.
+        Refund amount is taken from the stored PaymentIntentOrder
+        allocation:
 
-            Example:
-                Order amount  = ₹1.00
-                Platform fee  = ₹5.00
-                GST            = ₹0.90
-                ------------------------
-                Paid            = ₹6.90
+            order_amount
+            + checkout_fee_share
 
-                Refund         = ₹6.90
+        checkout_fee_share already contains this order's allocated
+        share of:
 
-        Multi-order PaymentIntent:
-            Refund only the specific order amount for now.
+            platform fee + GST
 
-            Shared checkout-fee allocation will be handled
-            separately in the multi-order refund phase.
+        No fee is recalculated during refund.
         """
 
-        order_ids = PaymentRepository.get_order_ids_for_intent(
-            db=db,
-            intent_id=intent.intent_id,
+        payment_order = (
+            db.query(PaymentIntentOrder)
+            .filter(
+                PaymentIntentOrder.intent_id == intent.intent_id,
+                PaymentIntentOrder.order_id == order_id,
+            )
+            .first()
         )
 
-        # --------------------------------------------------------
-        # Backward compatibility for legacy single-order intents
-        # --------------------------------------------------------
+        if not payment_order:
+            raise HTTPException(
+                status_code=400,
+                detail="Order is not linked to payment intent",
+            )
 
-        if not order_ids:
-            order_ids = [intent.order_id]
-
-        # --------------------------------------------------------
-        # SINGLE-ORDER PAYMENT
-        # --------------------------------------------------------
-
-        if len(order_ids) == 1:
-            if order_ids[0] != order_id:
-                raise HTTPException(
-                    status_code=400,
-                    detail="Order does not belong to payment intent",
-                )
-
-            refund_amount = float(intent.amount)
-
-        # --------------------------------------------------------
-        # MULTI-ORDER PAYMENT
-        # --------------------------------------------------------
-
-        else:
-            refund_amount = float(order_total)
-
-        # --------------------------------------------------------
-        # Validate
-        # --------------------------------------------------------
+        refund_amount = (
+            Decimal(str(payment_order.order_amount))
+            + Decimal(str(payment_order.checkout_fee_share))
+        ).quantize(
+            Decimal("0.01")
+        )
 
         if refund_amount <= 0:
             raise HTTPException(
@@ -627,7 +611,7 @@ class PaymentService:
                 detail="Invalid refund amount",
             )
 
-        return refund_amount
+        return float(refund_amount)
 
     # ============================================================
     # INITIATE REFUND
@@ -758,7 +742,6 @@ class PaymentService:
             db=db,
             intent=intent,
             order_id=order_id,
-            order_total=float(order.total_amount),
         )
 
         if refund_amount <= 0:
@@ -1666,7 +1649,6 @@ class PaymentService:
             db=db,
             intent=intent,
             order_id=order_id,
-            order_total=float(order.total_amount),
         )
 
         if refund_amount <= 0:

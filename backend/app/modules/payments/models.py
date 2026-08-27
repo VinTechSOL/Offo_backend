@@ -108,15 +108,24 @@ class PaymentIntentOrder(Base):
     """
     Associates one PaymentIntent with one or more Orders.
 
+    Stores the amount belonging to each order so that a
+    multi-order payment can be refunded correctly.
+
     Example:
 
-        PaymentIntent 5001
-            ├── Order 101
-            ├── Order 102
-            └── Order 103
+        PaymentIntent = ₹605.90
 
-    This allows multiple scheduled orders to be paid
-    through one PhonePe transaction.
+        Order 101:
+            order_amount       = ₹100.00
+            checkout_fee_share = ₹0.98
+
+        Order 102:
+            order_amount       = ₹200.00
+            checkout_fee_share = ₹1.97
+
+        Order 103:
+            order_amount       = ₹300.00
+            checkout_fee_share = ₹2.95
     """
 
     __tablename__ = "payment_intent_orders"
@@ -144,6 +153,31 @@ class PaymentIntentOrder(Base):
         ),
         nullable=False,
         unique=True,
+    )
+
+    # ------------------------------------------------------------
+    # Amount belonging to this specific order.
+    #
+    # This is the order subtotal / Order.total_amount.
+    # ------------------------------------------------------------
+
+    order_amount: Mapped[float] = mapped_column(
+        Numeric(10, 2),
+        nullable=False,
+    )
+
+    # ------------------------------------------------------------
+    # Portion of the shared checkout fee allocated to this order.
+    #
+    # This includes the proportional share of:
+    #
+    #     platform fee + GST
+    #
+    # ------------------------------------------------------------
+
+    checkout_fee_share: Mapped[float] = mapped_column(
+        Numeric(10, 2),
+        nullable=False,
     )
 
     intent = relationship(

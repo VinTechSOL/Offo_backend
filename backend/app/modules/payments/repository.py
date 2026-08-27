@@ -83,17 +83,25 @@ class PaymentRepository:
         db: Session,
         intent_id: int,
         order_id: int,
+        order_amount: int,
+        checkout_fee_share: float,
     ):
         """
         Associate one order with a payment intent.
 
         payment_intent_orders.order_id is UNIQUE, so an order
         cannot belong to multiple payment intents.
+
+        order_amount: the order's original total/subtotal
+        checkout_fee_share: this order's alloated share of the shared checkout fee
+        refund amount for this order : order_amount + checkout_fee_share
         """
 
         link = PaymentIntentOrder(
             intent_id=intent_id,
             order_id=order_id,
+            order_amount=order_amount,
+            checkout_fee_share=checkout_fee_share,
         )
 
         db.add(link)
@@ -105,18 +113,43 @@ class PaymentRepository:
     def add_orders_to_intent(
         db: Session,
         intent_id: int,
-        order_ids: list[int],
+        order_allocations: list[dict],
     ):
         """
         Associate multiple orders with one payment intent.
+
+        Each allocation must contain:
+
+            {
+                "order_id": int,
+                "order_amount": Decimal/float,
+                "checkout_fee_share": Decimal/float,
+            }
+
+        Example:
+
+            [
+                {
+                    "order_id": 101,
+                    "order_amount": 100.00,
+                    "checkout_fee_share": 1.64,
+                },
+                {
+                    "order_id": 102,
+                    "order_amount": 200.00,
+                    "checkout_fee_share": 3.27,
+                },
+            ]
         """
 
         links = []
 
-        for order_id in order_ids:
+        for allocation in order_allocations:
             link = PaymentIntentOrder(
                 intent_id=intent_id,
-                order_id=order_id,
+                order_id=allocation["order_id"],
+                order_amount=allocation["order_amount"],
+                checkout_fee_share=allocation["checkout_fee_share"],
             )
 
             db.add(link)
