@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 
-from app.modules.support.models import Ticket, Feedback
+from app.modules.support.models import Ticket, Feedback, TicketMessage
 
 from app.modules.orders.models import (
     Order,
@@ -310,6 +310,38 @@ class SupportRepository:
             )
             .order_by(
                 Feedback.created_at.desc(),
+            )
+            .all()
+        )
+
+
+    # =====================================================
+    # TICKET MESSAGES
+    # =====================================================
+
+    @staticmethod
+    def create_ticket_message(
+        db: Session,
+        message: TicketMessage,
+    ):
+        db.add(message)
+        db.flush()
+
+        return message
+
+    @staticmethod
+    def get_ticket_messages(
+        db: Session,
+        ticket_id: int,
+    ):
+        return (
+            db.query(TicketMessage)
+            .filter(
+                TicketMessage.ticket_id == ticket_id,
+            )
+            .order_by(
+                TicketMessage.created_at.asc(),
+                TicketMessage.message_id.asc(),
             )
             .all()
         )

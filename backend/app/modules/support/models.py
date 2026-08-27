@@ -27,10 +27,6 @@ class Ticket(Base):
         primary_key=True,
     )
 
-    # -------------------------
-    # Ownership
-    # -------------------------
-
     user_id: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -47,10 +43,6 @@ class Ticket(Base):
         index=True,
     )
 
-    # -------------------------
-    # Optional ordered item
-    # -------------------------
-
     order_item_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey(
@@ -60,10 +52,6 @@ class Ticket(Base):
         nullable=True,
         index=True,
     )
-
-    # -------------------------
-    # Issue
-    # -------------------------
 
     issue_type: Mapped[str] = mapped_column(
         String(50),
@@ -80,20 +68,12 @@ class Ticket(Base):
         nullable=True,
     )
 
-    # -------------------------
-    # Status
-    # -------------------------
-
     status: Mapped[str] = mapped_column(
         String(30),
         nullable=False,
         default=TicketStatus.OPEN,
         index=True,
     )
-
-    # -------------------------
-    # Timestamps
-    # -------------------------
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -109,6 +89,57 @@ class Ticket(Base):
     )
 
 
+# =========================================================
+# TICKET MESSAGES
+# =========================================================
+
+class TicketMessage(Base):
+    __tablename__ = "ticket_messages"
+    __table_args__ = {"schema": "support"}
+
+    message_id: Mapped[int] = mapped_column(
+        BigInteger,
+        primary_key=True,
+    )
+
+    ticket_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey(
+            "support.tickets.ticket_id",
+            ondelete="CASCADE",
+        ),
+        nullable=False,
+        index=True,
+    )
+
+    # USER / ADMIN
+    sender_type: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+    )
+
+    # user_id or staff_id depending on sender_type
+    sender_id: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+
+    message: Mapped[str] = mapped_column(
+        Text,
+        nullable=False,
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        default=lambda: datetime.now(timezone.utc),
+    )
+
+
+# =========================================================
+# FEEDBACK
+# =========================================================
+
 class Feedback(Base):
     __tablename__ = "feedback"
     __table_args__ = {"schema": "support"}
@@ -117,10 +148,6 @@ class Feedback(Base):
         BigInteger,
         primary_key=True,
     )
-
-    # -------------------------
-    # Ownership
-    # -------------------------
 
     user_id: Mapped[int] = mapped_column(
         Integer,
@@ -138,10 +165,6 @@ class Feedback(Base):
         index=True,
     )
 
-    # -------------------------
-    # Ratings
-    # -------------------------
-
     food_rating: Mapped[int] = mapped_column(
         Integer,
         nullable=False,
@@ -156,10 +179,6 @@ class Feedback(Base):
         Text,
         nullable=True,
     )
-
-    # -------------------------
-    # Timestamp
-    # -------------------------
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

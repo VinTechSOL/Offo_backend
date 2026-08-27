@@ -9,6 +9,7 @@ from app.modules.payments.schemas import (
     PaymentInitiateResponse,
     PaymentStatusResponse,
 )
+from app.modules.orders.constants import PaymentStatus
 from app.modules.payments.constants import PaymentGateway
 from app.modules.payments.service import PaymentService
 from app.modules.payments.repository import PaymentRepository
@@ -30,7 +31,7 @@ def initiate_payment(
     result = PaymentService.initiate_payment(
         db=db,
         user_id=user.user_id,
-        order_id=data.order_id,
+        order_ids=data.order_ids,
         gateway=PaymentGateway.PHONEPE,
     )
 
@@ -90,15 +91,26 @@ def refund_payment(
     )
 
     return {
-        "message": "Refund initiated",
+        "message": "Refund request processed",
         "order_id": order_id,
+        "status": result.get("status"),
         "refund_attempt_id": (
             result["refund_attempt"].attempt_id
+            if result.get("refund_attempt")
+            else None
         ),
-        "merchant_refund_id": result["merchant_refund_id"],
-        "refund_id": result["refund_id"],
-        "state": result["state"],
-        "amount": result["amount"],
+        "merchant_refund_id": (
+            result.get("merchant_refund_id")
+        ),
+        "refund_id": (
+            result.get("refund_id")
+        ),
+        "state": (
+            result.get("state")
+        ),
+        "amount": (
+            result.get("amount")
+        ),
     }
 
 @router.get(
@@ -109,6 +121,25 @@ def refund_status(
     db: Session = Depends(get_db),
     user=Depends(get_current_user),
 ):
+    """
+    Return the refund status for one specific order.
+
+    Important:
+
+    A PaymentIntent may contain multiple orders.
+
+    Therefore this endpoint always resolves the refund
+    attempt using:
+
+        intent_id + order_id
+
+    and never returns another order's refund attempt.
+    """
+
+    # ============================================================
+    # 1. LOAD ORDER
+    # ============================================================
+
     order = OrderRepository.get_order(
         db,
         order_id,
@@ -120,36 +151,118 @@ def refund_status(
             detail="Order not found",
         )
 
+    # ============================================================
+    # 2. OWNERSHIP
+    # ============================================================
+
     if order.user_id != user.user_id:
         raise HTTPException(
             status_code=403,
             detail="Unauthorized",
         )
 
-    intent = PaymentService.sync_refund_status(
-        db=db,
-        order_id=order_id,
+    # ============================================================
+    # 3. FIND PAYMENT INTENT
+    # ============================================================
+
+    intent = PaymentRepository.get_intent_by_order(
+        db,
+        order_id,
     )
 
-    refund_attempt = PaymentRepository.get_refund_attempt(
-        db,
-        intent.intent_id,
+    if not intent:
+        raise HTTPException(
+            status_code=404,
+            detail="Payment not found",
+        )
+
+    # ============================================================
+    # 4. SYNC REFUND
+    # ============================================================
+
+    # If a refund is currently active, synchronize it with
+    # PhonePe first.
+    #
+    # If there is no refund attempt yet, the service will
+    # return the appropriate error.
+
+    if order.payment_status == PaymentStatus.REFUND_PENDING.value:
+
+        try:
+
+            intent = PaymentService.sync_refund_status(
+                db=db,
+                order_id=order_id,
+            )
+
+            db.refresh(order)
+
+        except HTTPException as e:
+
+            # If refund has not actually been initiated yet,
+            # still allow the endpoint to return the local state.
+
+            if e.detail not in (
+                "Refund attempt not found for order",
+                "Refund is not currently active",
+            ):
+                raise
+
+    # ============================================================
+    # 5. GET REFUND ATTEMPT FOR THIS ORDER ONLY
+    # ============================================================
+
+    refund_attempt = (
+        PaymentRepository
+        .get_latest_refund_attempt_for_order(
+            db=db,
+            intent_id=intent.intent_id,
+            order_id=order_id,
+        )
     )
+
+    # ============================================================
+    # 6. RESPONSE
+    # ============================================================
 
     return {
         "order_id": order_id,
-        "payment_status": order.payment_status,
-        "intent_status": intent.status,
+
+        "order_payment_status": (
+            order.payment_status
+        ),
+
+        "intent_id": intent.intent_id,
+
+        "intent_status": (
+            intent.status
+        ),
+
+        "refund_attempt_id": (
+            refund_attempt.attempt_id
+            if refund_attempt
+            else None
+        ),
+
         "refund_attempt_status": (
             refund_attempt.status
             if refund_attempt
             else None
         ),
+
+        "refund_amount": (
+            float(refund_attempt.amount)
+            if refund_attempt
+            and refund_attempt.amount is not None
+            else None
+        ),
+
         "merchant_refund_id": (
             refund_attempt.merchant_refund_id
             if refund_attempt
             else None
         ),
+
         "gateway_refund_id": (
             refund_attempt.gateway_refund_id
             if refund_attempt
@@ -162,7 +275,6 @@ def refund_status(
             else None
         ),
     }
-
 
 
 @router.get(

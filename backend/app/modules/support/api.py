@@ -18,6 +18,9 @@ from app.core.security import (
 from app.modules.support.schemas import (
     TicketCreate,
     TicketResponse,
+    TicketDetailResponse,
+    TicketMessageCreate,
+    TicketMessageResponse,
     TicketStatusUpdate,
     FeedbackCreate,
     FeedbackResponse,
@@ -160,6 +163,7 @@ def get_my_tickets(
 
 @router.get(
     "/tickets/{ticket_id}",
+    response_model=TicketDetailResponse
 )
 def get_my_ticket(
     ticket_id: int,
@@ -174,6 +178,23 @@ def get_my_ticket(
         ticket_id,
     )
 
+
+@router.post(
+    "/tickets/{ticket_id}/messages",
+    response_model=TicketMessageResponse,
+)
+def create_user_ticket_message(
+    ticket_id: int,
+    data: TicketMessageCreate,
+    db: Session = Depends(get_db),
+    user=Depends(get_current_user),
+):
+    return SupportService.create_user_ticket_message(
+        db=db,
+        user_id=user.user_id,
+        ticket_id=ticket_id,
+        message_text=data.message,
+    )
 
 # =========================================================
 # USER FEEDBACK
@@ -243,6 +264,24 @@ def get_admin_ticket(
     return SupportService.get_admin_ticket(
         db,
         ticket_id,
+    )
+
+
+@router.post(
+    "/admin/tickets/{ticket_id}/messages",
+    response_model=TicketMessageResponse,
+)
+def create_admin_ticket_message(
+    ticket_id: int,
+    data: TicketMessageCreate,
+    db: Session = Depends(get_db),
+    staff=Depends(get_current_staff),
+):
+    return SupportService.create_admin_ticket_message(
+        db=db,
+        staff=staff,
+        ticket_id=ticket_id,
+        message_text=data.message,
     )
 
 

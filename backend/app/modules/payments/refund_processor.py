@@ -10,7 +10,9 @@ from app.modules.payments.models import (
 )
 from app.modules.payments.constants import (
     PaymentIntentStatus,
+    PaymentAttemptStatus,
 )
+from app.modules.payments.repository import PaymentRepository
 from app.modules.payments.service import PaymentService
 
 
@@ -22,9 +24,9 @@ MAX_REFUNDS_PER_RUN = 20
 
 def process_pending_refunds():
     """
-    Process orders that are waiting for refund.
+    Process orders waiting for refund.
 
-    Flow:
+    Order-level flow:
 
         REFUND_PENDING
               ↓
@@ -32,13 +34,25 @@ def process_pending_refunds():
               ↓
         initiate_refund_internal()
               ↓
+        RefundAttempt
+              ↓
         REFUND_INITIATED
               ↓
         PhonePe
               ↓
         sync_refund_status()
               ↓
-        REFUNDED / REFUND_FAILED
+        Order REFUNDED
+              ↓
+        If all linked orders refunded:
+              PaymentIntent REFUNDED
+
+    IMPORTANT:
+
+    A PaymentIntent may contain multiple orders.
+
+    Therefore each refund is processed independently
+    for the specific order that was cancelled/rejected.
     """
 
     db: Session = SessionLocal()
@@ -49,23 +63,20 @@ def process_pending_refunds():
 
     try:
 
-        # --------------------------------------------------------
-        # Find refund-pending orders
-        # --------------------------------------------------------
+        # ========================================================
+        # 1. FIND ORDERS WAITING FOR REFUND
+        # ========================================================
 
         orders = (
             db.query(Order)
             .filter(
                 Order.payment_status
-                == PaymentStatus.REFUND_PENDING,
+                == PaymentStatus.REFUND_PENDING.value,
             )
             .order_by(
                 Order.updated_at.asc()
             )
             .limit(MAX_REFUNDS_PER_RUN)
-            .with_for_update(
-                skip_locked=True,
-            )
             .all()
         )
 
@@ -74,9 +85,18 @@ def process_pending_refunds():
             len(orders),
         )
 
+        # ========================================================
+        # 2. PROCESS EACH ORDER
+        # ========================================================
+
         for order in orders:
 
             try:
+
+                logger.info(
+                    "Processing refund | order=%s",
+                    order.order_id,
+                )
 
                 # ------------------------------------------------
                 # Re-check payment state
@@ -84,22 +104,21 @@ def process_pending_refunds():
 
                 if (
                     order.payment_status
-                    != PaymentStatus.REFUND_PENDING
+                    != PaymentStatus.REFUND_PENDING.value
                 ):
                     skipped += 1
                     continue
 
                 # ------------------------------------------------
-                # Get intent
+                # Get payment intent
                 # ------------------------------------------------
 
                 intent = (
-                    db.query(PaymentIntent)
-                    .filter(
-                        PaymentIntent.order_id
-                        == order.order_id
+                    PaymentRepository
+                    .get_intent_by_order_for_update(
+                        db,
+                        order.order_id,
                     )
-                    .first()
                 )
 
                 if not intent:
@@ -114,40 +133,133 @@ def process_pending_refunds():
                     continue
 
                 # =================================================
+                # FIND REFUND ATTEMPT FOR THIS ORDER
+                # =================================================
+
+                refund_attempt = (
+                    PaymentRepository
+                    .get_refund_attempt_for_order_for_update(
+                        db=db,
+                        intent_id=intent.intent_id,
+                        order_id=order.order_id,
+                    )
+                )
+
+                # =================================================
+                # NO REFUND ATTEMPT YET
+                # =================================================
+
+                if not refund_attempt:
+
+                    logger.info(
+                        "No refund attempt exists | "
+                        "order=%s intent=%s",
+                        order.order_id,
+                        intent.intent_id,
+                    )
+
+                    # ------------------------------------------------
+                    # Payment must have succeeded before refund.
+                    # ------------------------------------------------
+
+                    if intent.status not in (
+                        PaymentIntentStatus.SUCCEEDED.value,
+                        PaymentIntentStatus.REFUND_FAILED.value,
+                    ):
+                        logger.warning(
+                            "Order waiting for refund but intent "
+                            "not refund eligible | "
+                            "order=%s intent_status=%s",
+                            order.order_id,
+                            intent.status,
+                        )
+
+                        skipped += 1
+                        continue
+
+                    # ------------------------------------------------
+                    # Start a brand-new refund.
+                    # ------------------------------------------------
+
+                    PaymentService.initiate_refund_internal(
+                        db=db,
+                        order_id=order.order_id,
+                    )
+
+                    processed += 1
+                    continue
+
+                # =================================================
                 # ALREADY REFUNDED
                 # =================================================
 
                 if (
-                    intent.status
-                    == PaymentIntentStatus.REFUNDED.value
+                    refund_attempt.status
+                    == PaymentAttemptStatus.SUCCESS.value
                 ):
 
                     logger.info(
-                        "Refund already completed | order=%s",
+                        "Refund already completed | "
+                        "order=%s refund_attempt=%s",
                         order.order_id,
+                        refund_attempt.attempt_id,
                     )
+
+                    # The order should normally already be
+                    # REFUNDED. This is defensive recovery.
+
+                    if (
+                        order.payment_status
+                        == PaymentStatus.REFUND_PENDING.value
+                    ):
+                        try:
+                            PaymentService.sync_refund_status(
+                                db=db,
+                                order_id=order.order_id,
+                            )
+                        except Exception:
+                            logger.exception(
+                                "Failed to reconcile already "
+                                "successful refund | order=%s",
+                                order.order_id,
+                            )
+                            db.rollback()
+                            failed += 1
+                            continue
 
                     skipped += 1
                     continue
 
                 # =================================================
-                # REFUND CURRENTLY PROCESSING
+                # REFUND CURRENTLY ACTIVE
                 # =================================================
 
                 if (
-                    intent.status
-                    == PaymentIntentStatus.REFUND_INITIATED.value
+                    refund_attempt.status
+                    in (
+                        PaymentAttemptStatus.INITIATED.value,
+                        PaymentAttemptStatus.REDIRECTED.value,
+                    )
                 ):
 
                     logger.info(
-                        "Checking existing refund | order=%s",
+                        "Checking existing refund | "
+                        "order=%s refund_attempt=%s "
+                        "merchant_refund_id=%s",
                         order.order_id,
+                        refund_attempt.attempt_id,
+                        refund_attempt.merchant_refund_id,
                     )
 
-                    # Do not create another refund.
+                    # ------------------------------------------------
+                    # IMPORTANT:
                     #
-                    # Ask PhonePe for the status of the
-                    # existing refund attempt.
+                    # NEVER create another refund here.
+                    #
+                    # We already have a merchant_refund_id.
+                    #
+                    # Query PhonePe for this SAME refund.
+                    # ------------------------------------------------
 
                     PaymentService.sync_refund_status(
                         db=db,
@@ -159,42 +271,18 @@ def process_pending_refunds():
 
                 # =================================================
                 # REFUND FAILED
-                #
-                # This is retryable.
                 # =================================================
 
                 if (
-                    intent.status
-                    == PaymentIntentStatus.REFUND_FAILED.value
+                    refund_attempt.status
+                    == PaymentAttemptStatus.FAILED.value
                 ):
 
                     logger.warning(
-                        "Retrying failed refund | order=%s",
+                        "Retrying failed refund | "
+                        "order=%s refund_attempt=%s",
                         order.order_id,
-                    )
-
-                    # initiate_refund_internal() accepts
-                    # REFUND_FAILED and creates a new attempt.
-                    PaymentService.initiate_refund_internal(
-                        db=db,
-                        order_id=order.order_id,
-                    )
-
-                    processed += 1
-                    continue
-
-                # =================================================
-                # INITIAL REFUND
-                # =================================================
-
-                if (
-                    intent.status
-                    == PaymentIntentStatus.SUCCEEDED.value
-                ):
-
-                    logger.info(
-                        "Starting refund | order=%s",
-                        order.order_id,
+                        refund_attempt.attempt_id,
                     )
 
                     PaymentService.initiate_refund_internal(
@@ -206,14 +294,17 @@ def process_pending_refunds():
                     continue
 
                 # =================================================
-                # INVALID STATE
+                # UNKNOWN REFUND ATTEMPT STATE
                 # =================================================
 
                 logger.error(
-                    "Invalid refund state | "
-                    "order=%s intent_status=%s",
+                    "Invalid refund attempt state | "
+                    "order=%s intent=%s "
+                    "refund_attempt=%s status=%s",
                     order.order_id,
-                    intent.status,
+                    intent.intent_id,
+                    refund_attempt.attempt_id,
+                    refund_attempt.status,
                 )
 
                 skipped += 1
@@ -228,6 +319,10 @@ def process_pending_refunds():
                     "Refund processing failed | order=%s",
                     order.order_id,
                 )
+
+        # ========================================================
+        # FINAL SUMMARY
+        # ========================================================
 
         logger.info(
             "Refund processor finished | "
@@ -246,4 +341,5 @@ def process_pending_refunds():
         )
 
     finally:
+
         db.close()

@@ -2,6 +2,7 @@ from sqlalchemy.orm import Session
 
 from app.modules.payments.models import (
     PaymentIntent,
+    PaymentIntentOrder,
     PaymentAttempt,
 )
 
@@ -22,7 +23,19 @@ class PaymentRepository:
         db: Session,
         order_id: int,
     ):
-        return (
+        """
+        Find the payment intent associated with an order.
+
+        Supports:
+
+        1. Legacy/single-order intents
+           PaymentIntent.order_id = order_id
+
+        2. Multi-order intents
+           PaymentIntentOrder links the order to the intent.
+        """
+
+        intent = (
             db.query(PaymentIntent)
             .filter(
                 PaymentIntent.order_id == order_id
@@ -30,6 +43,180 @@ class PaymentRepository:
             .first()
         )
 
+        if intent:
+            return intent
+
+        return PaymentRepository.get_intent_for_order(
+            db=db,
+            order_id=order_id,
+        )
+
+    @staticmethod
+    def create_intent(
+        db: Session,
+        order_id: int,
+        amount: float,
+        platform_fee: float = 0,
+        gst: float = 0,
+        checkout_fee: float = 0,
+    ):
+        intent = PaymentIntent(
+            order_id=order_id,
+            amount=amount,
+            platform_fee=platform_fee,
+            gst=gst,
+            checkout_fee=checkout_fee,
+            status=PaymentIntentStatus.CREATED.value,
+        )
+
+        db.add(intent)
+        db.flush()
+
+        return intent
+
+    # ============================================================
+    # PAYMENT INTENT ↔ ORDERS
+    # ============================================================
+
+    @staticmethod
+    def add_order_to_intent(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Associate one order with a payment intent.
+
+        payment_intent_orders.order_id is UNIQUE, so an order
+        cannot belong to multiple payment intents.
+        """
+
+        link = PaymentIntentOrder(
+            intent_id=intent_id,
+            order_id=order_id,
+        )
+
+        db.add(link)
+        db.flush()
+
+        return link
+
+    @staticmethod
+    def add_orders_to_intent(
+        db: Session,
+        intent_id: int,
+        order_ids: list[int],
+    ):
+        """
+        Associate multiple orders with one payment intent.
+        """
+
+        links = []
+
+        for order_id in order_ids:
+            link = PaymentIntentOrder(
+                intent_id=intent_id,
+                order_id=order_id,
+            )
+
+            db.add(link)
+            links.append(link)
+
+        db.flush()
+
+        return links
+
+    @staticmethod
+    def get_orders_for_intent(
+        db: Session,
+        intent_id: int,
+    ):
+        """
+        Return all order-link rows associated with a payment intent.
+        """
+
+        return (
+            db.query(PaymentIntentOrder)
+            .filter(
+                PaymentIntentOrder.intent_id == intent_id
+            )
+            .order_by(
+                PaymentIntentOrder.id.asc()
+            )
+            .all()
+        )
+
+    @staticmethod
+    def get_order_ids_for_intent(
+        db: Session,
+        intent_id: int,
+    ):
+        """
+        Return only order IDs associated with a payment intent.
+        """
+
+        rows = (
+            db.query(PaymentIntentOrder.order_id)
+            .filter(
+                PaymentIntentOrder.intent_id == intent_id
+            )
+            .order_by(
+                PaymentIntentOrder.id.asc()
+            )
+            .all()
+        )
+
+        return [
+            row.order_id
+            for row in rows
+        ]
+
+    @staticmethod
+    def get_intent_for_order(
+        db: Session,
+        order_id: int,
+    ):
+        """
+        Find the payment intent associated with an order
+        through PaymentIntentOrder.
+        """
+
+        return (
+            db.query(PaymentIntent)
+            .join(
+                PaymentIntentOrder,
+                PaymentIntentOrder.intent_id
+                == PaymentIntent.intent_id,
+            )
+            .filter(
+                PaymentIntentOrder.order_id == order_id
+            )
+            .first()
+        )
+
+    @staticmethod
+    def get_intent_for_order_for_update(
+        db: Session,
+        order_id: int,
+    ):
+        """
+        Find and lock the payment intent associated with
+        an order through PaymentIntentOrder.
+        """
+
+        return (
+            db.query(PaymentIntent)
+            .join(
+                PaymentIntentOrder,
+                PaymentIntentOrder.intent_id
+                == PaymentIntent.intent_id,
+            )
+            .filter(
+                PaymentIntentOrder.order_id == order_id
+            )
+            .with_for_update()
+            .first()
+        )
 
     @staticmethod
     def get_intent_by_order_for_update(
@@ -37,17 +224,16 @@ class PaymentRepository:
         order_id: int,
     ):
         """
-        Fetch the payment intent while locking its row.
+        Fetch and lock the payment intent associated
+        with an order.
 
-        Used during payment initiation to prevent two
-        simultaneous requests from creating multiple
-        active payment attempts for the same order.
+        Supports:
 
-        PostgreSQL SELECT ... FOR UPDATE ensures that
-        concurrent requests serialize on this intent row.
+        1. Legacy/single-order intents
+        2. Multi-order intents
         """
 
-        return (
+        intent = (
             db.query(PaymentIntent)
             .filter(
                 PaymentIntent.order_id == order_id
@@ -56,22 +242,34 @@ class PaymentRepository:
             .first()
         )
 
-    @staticmethod
-    def create_intent(
-        db: Session,
-        order_id: int,
-        amount: float,
-    ):
-        intent = PaymentIntent(
+        if intent:
+            return intent
+
+        return PaymentRepository.get_intent_for_order_for_update(
+            db=db,
             order_id=order_id,
-            amount=amount,
-            status=PaymentIntentStatus.CREATED.value,
         )
 
-        db.add(intent)
-        db.flush()
+    @staticmethod
+    def is_order_linked_to_intent(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Check whether an order already belongs to
+        a payment intent.
+        """
 
-        return intent
+        return (
+            db.query(PaymentIntentOrder)
+            .filter(
+                PaymentIntentOrder.intent_id == intent_id,
+                PaymentIntentOrder.order_id == order_id,
+            )
+            .first()
+            is not None
+        )
 
     # ============================================================
     # PAYMENT ATTEMPTS
@@ -83,14 +281,19 @@ class PaymentRepository:
         intent_id: int,
         gateway: str,
         merchant_order_id: str,
+        amount: float,
     ):
         """
-        Create a normal/original payment attempt.
+        Create an original payment attempt.
 
-        parent_payment_id MUST remain NULL.
+        amount represents the total amount of this payment attempt.
 
-        Refund attempts are created separately using
-        create_refund_attempt().
+        Example:
+
+            PaymentIntent = ₹954
+            PaymentAttempt = ₹954
+
+        Refund attempts are created separately.
         """
 
         attempt_number = (
@@ -104,9 +307,11 @@ class PaymentRepository:
             intent_id=intent_id,
             gateway=gateway,
             merchant_order_id=merchant_order_id,
+            amount=amount,
             attempt_number=attempt_number,
             status=PaymentAttemptStatus.INITIATED.value,
             parent_payment_id=None,
+            refund_order_id=None,
         )
 
         db.add(attempt)
@@ -122,13 +327,10 @@ class PaymentRepository:
         """
         Return ALL attempts belonging to an intent.
 
-        This includes:
+        Includes:
 
-            - payment attempts
-            - refund attempts
-
-        Use the specialized methods below when you need
-        only payment or refund attempts.
+        - original payment attempts
+        - refund attempts
         """
 
         return (
@@ -149,9 +351,6 @@ class PaymentRepository:
     ):
         """
         Return ONLY original payment attempts.
-
-        Refund attempts have parent_payment_id set,
-        therefore they are excluded.
         """
 
         return (
@@ -188,7 +387,7 @@ class PaymentRepository:
         )
 
     # ============================================================
-    # ATTEMPT LOOKUPS
+    # PAYMENT ATTEMPT LOOKUPS
     # ============================================================
 
     @staticmethod
@@ -197,10 +396,7 @@ class PaymentRepository:
         merchant_order_id: str,
     ):
         """
-        Find an original PhonePe payment attempt using
-        OFFO merchant order ID.
-
-        Refund attempts are deliberately excluded.
+        Find an original PhonePe payment attempt.
         """
 
         return (
@@ -220,10 +416,6 @@ class PaymentRepository:
     ):
         """
         Return the latest ORIGINAL PAYMENT attempt.
-
-        IMPORTANT:
-
-        This does NOT return refund attempts.
         """
 
         return (
@@ -244,8 +436,7 @@ class PaymentRepository:
         intent_id: int,
     ):
         """
-        Explicit alias for callers that need the latest
-        original payment attempt.
+        Explicit alias for the latest original payment attempt.
         """
 
         return PaymentRepository.get_latest_attempt(
@@ -259,9 +450,7 @@ class PaymentRepository:
         intent_id: int,
     ):
         """
-        Return the latest successful ORIGINAL payment.
-
-        Used by refund flow.
+        Return the latest successful original payment attempt.
         """
 
         return (
@@ -287,23 +476,17 @@ class PaymentRepository:
         """
         Return the latest active ORIGINAL payment attempt.
 
-        Active payment states:
+        Active states:
 
             INITIATED
             REDIRECTED
-
-        Refund attempts are excluded.
         """
 
         return (
             db.query(PaymentAttempt)
             .filter(
                 PaymentAttempt.intent_id == intent_id,
-
-                # IMPORTANT:
-                # Only original payment attempts.
                 PaymentAttempt.parent_payment_id.is_(None),
-
                 PaymentAttempt.status.in_([
                     PaymentAttemptStatus.INITIATED.value,
                     PaymentAttemptStatus.REDIRECTED.value,
@@ -325,10 +508,8 @@ class PaymentRepository:
         intent_id: int,
     ):
         """
-        Get the next attempt number.
-
-        Both payment and refund attempts share the same
-        attempt_number sequence for an intent.
+        Payment and refund attempts share the same
+        attempt number sequence.
         """
 
         latest = (
@@ -363,8 +544,7 @@ class PaymentRepository:
 
         attempt.response_payload = payload
 
-        db.commit()
-        db.refresh(attempt)
+        db.flush()
 
         return attempt
 
@@ -380,8 +560,7 @@ class PaymentRepository:
 
         attempt.response_payload = payload
 
-        db.commit()
-        db.refresh(attempt)
+        db.flush()
 
         return attempt
 
@@ -397,8 +576,7 @@ class PaymentRepository:
 
         attempt.response_payload = payload
 
-        db.commit()
-        db.refresh(attempt)
+        db.flush()
 
         return attempt
 
@@ -411,8 +589,7 @@ class PaymentRepository:
             PaymentAttemptStatus.CANCELLED.value
         )
 
-        db.commit()
-        db.refresh(attempt)
+        db.flush()
 
         return attempt
 
@@ -430,7 +607,7 @@ class PaymentRepository:
         """
         Save PhonePe's generated order ID and checkout response.
 
-        This method is ONLY for normal payment attempts.
+        ONLY for normal payment attempts.
         """
 
         attempt.phonepe_order_id = phonepe_order_id
@@ -441,8 +618,7 @@ class PaymentRepository:
             PaymentAttemptStatus.REDIRECTED.value
         )
 
-        db.commit()
-        db.refresh(attempt)
+        db.flush()
 
         return attempt
 
@@ -456,10 +632,19 @@ class PaymentRepository:
         intent_id: int,
         parent_attempt_id: int,
         gateway: str,
+        refund_order_id: int,
+        amount: float,
     ):
         """
-        Create a refund attempt linked to the original
-        successful payment attempt.
+        Create a refund attempt for ONE specific order.
+
+        Example:
+
+            PaymentIntent = ₹954
+
+            Refund attempt:
+                refund_order_id = 102
+                amount = ₹318
         """
 
         attempt_number = (
@@ -472,9 +657,11 @@ class PaymentRepository:
         refund = PaymentAttempt(
             intent_id=intent_id,
             gateway=gateway,
+            amount=amount,
             attempt_number=attempt_number,
             status=PaymentAttemptStatus.INITIATED.value,
             parent_payment_id=parent_attempt_id,
+            refund_order_id=refund_order_id,
         )
 
         db.add(refund)
@@ -482,59 +669,12 @@ class PaymentRepository:
 
         return refund
 
+    # ============================================================
+    # REFUND ATTEMPT LOOKUPS
+    # ============================================================
+
     @staticmethod
     def get_refund_attempt(
-        db: Session,
-        intent_id: int,
-    ):
-        """
-        Return the latest refund attempt.
-        """
-
-        return (
-            db.query(PaymentAttempt)
-            .filter(
-                PaymentAttempt.intent_id == intent_id,
-                PaymentAttempt.parent_payment_id.isnot(None),
-            )
-            .order_by(
-                PaymentAttempt.attempt_number.desc()
-            )
-            .first()
-        )
-
-
-    @staticmethod
-    def get_refund_attempt_for_update(
-        db: Session,
-        intent_id: int,
-    ):
-        """
-        Return the latest refund attempt while locking it.
-
-        Used when a refund operation needs to safely inspect
-        and modify an existing refund attempt.
-        """
-
-        return (
-            db.query(PaymentAttempt)
-            .filter(
-                PaymentAttempt.intent_id == intent_id,
-                PaymentAttempt.parent_payment_id.isnot(None),
-            )
-            .order_by(
-                PaymentAttempt.attempt_number.desc()
-            )
-            .with_for_update()
-            .first()
-        )
-
-    # ============================================================
-    # REFUND ATTEMPT HELPERS
-    # ============================================================
-
-    @staticmethod
-    def get_latest_refund_attempt(
         db: Session,
         intent_id: int,
     ):
@@ -555,15 +695,13 @@ class PaymentRepository:
         )
 
     @staticmethod
-    def get_active_refund_attempt(
+    def get_refund_attempt_for_update(
         db: Session,
         intent_id: int,
     ):
         """
-        Return an active refund attempt that is currently
-        being processed.
-
-        An active refund must NOT be duplicated.
+        Return the latest refund attempt for an intent
+        while locking the row.
         """
 
         return (
@@ -571,6 +709,105 @@ class PaymentRepository:
             .filter(
                 PaymentAttempt.intent_id == intent_id,
                 PaymentAttempt.parent_payment_id.isnot(None),
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .with_for_update()
+            .first()
+        )
+
+    @staticmethod
+    def get_latest_refund_attempt_for_order(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Return the latest refund attempt for one specific order.
+        """
+
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.refund_order_id == order_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .first()
+        )
+
+    @staticmethod
+    def get_latest_refund_attempt_for_order_for_update(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Return and lock the latest refund attempt
+        for one specific order.
+        """
+
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.refund_order_id == order_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .with_for_update()
+            .first()
+        )
+
+    @staticmethod
+    def get_active_refund_attempt(
+        db: Session,
+        intent_id: int,
+    ):
+        """
+        Return any active refund attempt for the intent.
+        """
+
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+                PaymentAttempt.status.in_([
+                    PaymentAttemptStatus.INITIATED.value,
+                    PaymentAttemptStatus.REDIRECTED.value,
+                ]),
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .first()
+        )
+
+    @staticmethod
+    def get_active_refund_attempt_for_order(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Return an active refund attempt for one specific order.
+
+        Prevents duplicate refunds for the same order.
+        """
+
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+                PaymentAttempt.refund_order_id == order_id,
                 PaymentAttempt.status.in_([
                     PaymentAttemptStatus.INITIATED.value,
                     PaymentAttemptStatus.REDIRECTED.value,
@@ -605,7 +842,30 @@ class PaymentRepository:
             .first()
         )
 
+    @staticmethod
+    def get_failed_refund_attempt_for_order(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Return the latest failed refund attempt for one order.
+        """
 
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+                PaymentAttempt.refund_order_id == order_id,
+                PaymentAttempt.status
+                == PaymentAttemptStatus.FAILED.value,
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .first()
+        )
 
     # ============================================================
     # PHONEPE REFUND
@@ -621,17 +881,6 @@ class PaymentRepository:
     ):
         """
         Save PhonePe refund response.
-
-        Existing schema does not have a dedicated
-        phonepe_refund_id column.
-
-        Therefore:
-
-            merchant_order_id = OFFO merchant refund ID
-            phonepe_order_id  = PhonePe refund ID
-
-        This preserves the current schema while keeping
-        the two identifiers distinguishable.
         """
 
         attempt.merchant_refund_id = merchant_refund_id
@@ -643,8 +892,7 @@ class PaymentRepository:
             PaymentAttemptStatus.INITIATED.value
         )
 
-        db.commit()
-        db.refresh(attempt)
+        db.flush()
 
         return attempt
 
@@ -660,8 +908,7 @@ class PaymentRepository:
 
         attempt.response_payload = response
 
-        db.commit()
-        db.refresh(attempt)
+        db.flush()
 
         return attempt
 
@@ -688,6 +935,304 @@ class PaymentRepository:
         )
 
     # ============================================================
+    # REFUND AGGREGATE STATE
+    # ============================================================
+
+    @staticmethod
+    def are_all_orders_refunded(
+        db: Session,
+        intent_id: int,
+    ) -> bool:
+        """
+        Return True only when every order linked to the
+        payment intent is REFUNDED.
+
+        Used to determine whether the entire PaymentIntent
+        can become REFUNDED.
+        """
+
+        from app.modules.orders.models import Order
+        from app.modules.orders.constants import PaymentStatus
+
+        order_ids = (
+            PaymentRepository.get_order_ids_for_intent(
+                db,
+                intent_id,
+            )
+        )
+
+        # Backward compatibility for legacy intents.
+        if not order_ids:
+            intent = db.get(
+                PaymentIntent,
+                intent_id,
+            )
+
+            if not intent:
+                return False
+
+            order_ids = [intent.order_id]
+
+        refunded_count = (
+            db.query(Order)
+            .filter(
+                Order.order_id.in_(order_ids),
+                Order.payment_status
+                == PaymentStatus.REFUNDED.value,
+            )
+            .count()
+        )
+
+        return refunded_count == len(order_ids)
+
+    # ============================================================
+    # REFUND / INTENT AGGREGATE STATE
+    # ============================================================
+
+    @staticmethod
+    def calculate_intent_refund_status(
+        db: Session,
+        intent: PaymentIntent,
+    ):
+        """
+        Calculate the aggregate refund state of a PaymentIntent.
+
+        Rules:
+
+            ALL linked orders REFUNDED
+                -> REFUNDED
+
+            At least one refund is active
+                -> REFUND_INITIATED
+
+            No active refund, but at least one refund failed
+                -> REFUND_FAILED
+
+            Otherwise
+                -> current intent status
+
+        Does NOT modify the database.
+        """
+
+        from app.modules.orders.models import Order
+        from app.modules.orders.constants import PaymentStatus
+
+        orders = (
+            db.query(Order)
+            .join(
+                PaymentIntentOrder,
+                PaymentIntentOrder.order_id
+                == Order.order_id,
+            )
+            .filter(
+                PaymentIntentOrder.intent_id
+                == intent.intent_id,
+            )
+            .all()
+        )
+
+        # --------------------------------------------------------
+        # Backward compatibility
+        # --------------------------------------------------------
+
+        if not orders:
+
+            anchor_order = db.get(
+                Order,
+                intent.order_id,
+            )
+
+            if anchor_order:
+                orders = [anchor_order]
+
+        if not orders:
+            return intent.status
+
+        # ========================================================
+        # ALL ORDERS REFUNDED
+        # ========================================================
+
+        if all(
+            order.payment_status
+            == PaymentStatus.REFUNDED.value
+            for order in orders
+        ):
+            return PaymentIntentStatus.REFUNDED.value
+
+        # ========================================================
+        # ACTIVE REFUND
+        # ========================================================
+
+        active_refund_exists = (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id
+                == intent.intent_id,
+                PaymentAttempt.parent_payment_id
+                .isnot(None),
+                PaymentAttempt.status.in_([
+                    PaymentAttemptStatus.INITIATED.value,
+                    PaymentAttemptStatus.REDIRECTED.value,
+                ]),
+            )
+            .first()
+            is not None
+        )
+
+        if active_refund_exists:
+            return PaymentIntentStatus.REFUND_INITIATED.value
+
+        # ========================================================
+        # FAILED REFUND
+        # ========================================================
+
+        failed_refund_exists = (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id
+                == intent.intent_id,
+                PaymentAttempt.parent_payment_id
+                .isnot(None),
+                PaymentAttempt.status
+                == PaymentAttemptStatus.FAILED.value,
+            )
+            .first()
+            is not None
+        )
+
+        if failed_refund_exists:
+            return PaymentIntentStatus.REFUND_FAILED.value
+
+        return intent.status
+
+    @staticmethod
+    def refresh_intent_refund_status(
+        db: Session,
+        intent: PaymentIntent,
+    ):
+        """
+        Recalculate and update the aggregate refund state.
+
+        Does not commit.
+        Caller controls the transaction.
+        """
+
+        new_status = (
+            PaymentRepository.calculate_intent_refund_status(
+                db=db,
+                intent=intent,
+            )
+        )
+
+        if intent.status != new_status:
+            intent.status = new_status
+            db.flush()
+
+        return intent
+
+    # ============================================================
+    # RELATED ORDERS
+    # ============================================================
+
+    @staticmethod
+    def get_orders_for_intent_with_orders(
+        db: Session,
+        intent_id: int,
+    ):
+        """
+        Return all Order objects belonging to a PaymentIntent.
+        """
+
+        from app.modules.orders.models import Order
+
+        return (
+            db.query(Order)
+            .join(
+                PaymentIntentOrder,
+                PaymentIntentOrder.order_id
+                == Order.order_id,
+            )
+            .filter(
+                PaymentIntentOrder.intent_id == intent_id
+            )
+            .order_by(
+                PaymentIntentOrder.id.asc()
+            )
+            .all()
+        )
+
+    @staticmethod
+    def get_latest_refund_attempt_for_order(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Return the latest refund attempt for one specific order.
+        """
+
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.refund_order_id == order_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .first()
+        )
+
+    @staticmethod
+    def get_latest_refund_attempt_for_order_for_update(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Return the latest refund attempt for one order
+        while locking the row.
+        """
+
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.refund_order_id == order_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .with_for_update()
+            .first()
+        )
+
+    @staticmethod
+    def get_refund_attempts_for_order(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Return all refund attempts for one specific order.
+        """
+
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.refund_order_id == order_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.asc()
+            )
+            .all()
+        )
+
+    # ============================================================
     # TRANSACTION HELPERS
     # ============================================================
 
@@ -698,10 +1243,7 @@ class PaymentRepository:
         response: dict,
     ):
         """
-        Save gateway response without changing the attempt state.
-
-        Useful when the service needs to control the state
-        transition itself.
+        Save gateway response without changing state.
         """
 
         attempt.response_payload = response
@@ -709,3 +1251,27 @@ class PaymentRepository:
         db.flush()
 
         return attempt
+
+
+    @staticmethod
+    def get_refund_attempt_for_order_for_update(
+        db: Session,
+        intent_id: int,
+        order_id: int,
+    ):
+        """
+        Return the latest refund attempt for a specific order while locking the row.
+        """
+        return (
+            db.query(PaymentAttempt)
+            .filter(
+                PaymentAttempt.intent_id == intent_id,
+                PaymentAttempt.parent_payment_id.isnot(None),
+                PaymentAttempt.refund_order_id == order_id,
+            )
+            .order_by(
+                PaymentAttempt.attempt_number.desc()
+            )
+            .with_for_update()
+            .first()
+        )

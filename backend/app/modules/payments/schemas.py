@@ -1,11 +1,13 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import datetime
-from typing import Optional
 
 
 class PaymentInitiateRequest(BaseModel):
-    order_id: int
-    gateway: str  # PHONEPE (for now)
+    order_ids: list[int] = Field(
+        min_length=1,
+    )
+
+    gateway: str = "PHONEPE"
 
 
 class PaymentAttemptResponse(BaseModel):
@@ -21,10 +23,14 @@ class PaymentAttemptResponse(BaseModel):
 
 class PaymentIntentResponse(BaseModel):
     intent_id: int
+
+    # Anchor order
     order_id: int
+
     amount: float
     status: str
     created_at: datetime
+
     attempts: list[PaymentAttemptResponse]
 
     class Config:

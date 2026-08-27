@@ -1,8 +1,8 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-
+from datetime import datetime, timezone
 from app.modules.support.models import (
-    Ticket,Feedback,
+    Ticket,Feedback,TicketMessage
 )
 
 from app.modules.support.repository import (
@@ -157,7 +157,77 @@ class SupportService:
                 detail="Ticket not found",
             )
 
-        return ticket
+        messages = SupportRepository.get_ticket_messages(
+            db,
+            ticket.ticket_id,
+        )
+
+        return {
+            "ticket_id": ticket.ticket_id,
+            "order_id": ticket.order_id,
+            "order_item_id": ticket.order_item_id,
+            "issue_type": ticket.issue_type,
+            "description": ticket.description,
+            "image_url": ticket.image_url,
+            "status": ticket.status,
+            "created_at": ticket.created_at,
+            "updated_at": ticket.updated_at,
+            "messages": messages,
+        }
+
+
+    @staticmethod
+    def create_user_ticket_message(
+        db: Session,
+        user_id: int,
+        ticket_id: int,
+        message_text: str,
+    ):
+        ticket = SupportRepository.get_user_ticket(
+            db,
+            user_id,
+            ticket_id,
+        )
+
+        if not ticket:
+            raise HTTPException(
+                status_code=404,
+                detail="Ticket not found",
+            )
+
+        # Closed tickets are no longer conversational.
+        if ticket.status == TicketStatus.CLOSED.value:
+            raise HTTPException(
+                status_code=400,
+                detail="This ticket is closed",
+            )
+
+        message_text = message_text.strip()
+
+        if not message_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Message cannot be empty",
+            )
+
+        message = TicketMessage(
+            ticket_id=ticket.ticket_id,
+            sender_type="USER",
+            sender_id=user_id,
+            message=message_text,
+        )
+
+        SupportRepository.create_ticket_message(
+            db,
+            message,
+        )
+
+        ticket.updated_at = datetime.now(timezone.utc)
+
+        db.commit()
+        db.refresh(message)
+
+        return message
 
     # =====================================================
     # ADMIN TICKETS
@@ -254,6 +324,11 @@ class SupportService:
             menu_item,
         ) = row
 
+        messages = SupportRepository.get_ticket_messages(
+            db,
+            ticket.ticket_id
+        )
+
         return {
             "ticket_id": ticket.ticket_id,
 
@@ -297,6 +372,8 @@ class SupportService:
             "created_at": ticket.created_at,
 
             "updated_at": ticket.updated_at,
+
+            "messages": messages,
         }
 
     @staticmethod
@@ -354,6 +431,83 @@ class SupportService:
 
         return ticket
 
+
+    @staticmethod
+    def create_admin_ticket_message(
+        db: Session,
+        staff,
+        ticket_id: int,
+        message_text: str,
+    ):
+        ticket = SupportRepository.get_ticket(
+            db,
+            ticket_id,
+        )
+
+        if not ticket:
+            raise HTTPException(
+                status_code=404,
+                detail="Ticket not found",
+            )
+
+        if ticket.status == TicketStatus.CLOSED.value:
+            raise HTTPException(
+                status_code=400,
+                detail="This ticket is closed",
+            )
+
+        message_text = message_text.strip()
+
+        if not message_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Message cannot be empty",
+            )
+
+        message = TicketMessage(
+            ticket_id=ticket.ticket_id,
+            sender_type="ADMIN",
+            sender_id=staff.staff_id,
+            message=message_text,
+        )
+
+        SupportRepository.create_ticket_message(
+            db,
+            message,
+        )
+
+        ticket.updated_at = datetime.now(timezone.utc)
+
+        # First commit the actual message.
+        db.commit()
+        db.refresh(message)
+
+        # -------------------------------------------------
+        # Notify customer AFTER message is committed.
+        # -------------------------------------------------
+
+        display_ticket_id = (
+            f"TKT-{ticket.ticket_id:06d}"
+        )
+
+        NotificationService.trigger(
+            db=db,
+            event=NotificationEvent.TICKET_MESSAGE_RECEIVED,
+            recipient_type=NotificationRecipient.USER,
+            recipient_id=ticket.user_id,
+            title="Support Ticket Reply",
+            message=(
+                f"Admin replied to your support ticket "
+                f"{display_ticket_id}."
+            ),
+            priority=NotificationPriority.MEDIUM,
+            order_id=ticket.order_id,
+        )
+
+        db.commit()
+
+        return message
+
     # =====================================================
     # FEEDBACK
     # =====================================================
@@ -382,13 +536,21 @@ class SupportService:
             )
 
         # ---------------------------------------------
-        # 2. Feedback only after completion
+        # 2. Feedback only after completion or cancellation or rejection
         # ---------------------------------------------
 
-        if order.order_status != OrderStatus.COMPLETED.value:
+        order_status = str(order.order_status).strip().upper()
+
+        allowed_statuses = {
+            OrderStatus.COMPLETED.value,
+            OrderStatus.CANCELLED.value,
+            OrderStatus.REJECTED.value,
+        }
+
+        if order.order_status not in allowed_statuses:
             raise HTTPException(
                 status_code=400,
-                detail="Feedback can only be submitted for completed orders",
+                detail="Feedback can only be submitted for completed, cancelled or rejected orders",
             )
 
         # ---------------------------------------------

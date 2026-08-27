@@ -34,12 +34,16 @@ class OrderDetailItemResponse(BaseModel):
 
 class OrderBillResponse(BaseModel):
     subtotal: float
+    platform_fee: float
+    gst: float
     convenience_fee: float
     total: float
 
 
 class OrderPaymentResponse(BaseModel):
     status: str
+    intent_status: str | None = None
+    gateway: str | None = None
     transaction_id: str | None = None
     paid_at: datetime | None = None
 
@@ -73,6 +77,7 @@ class UserOrderDetailResponse(BaseModel):
     cafe_id: int
     cafe_name: str | None = None
     branch_id: int
+    fssai_license_number: str | None = None
 
     # --------------------------------------------------
     # Amount

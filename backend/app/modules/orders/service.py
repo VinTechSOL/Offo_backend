@@ -92,8 +92,8 @@ class OrderService:
             item.price_at_time * item.quantity
             for item in cart_items
         )
-        convenience_fee = 6
-        total_amount = subtotal + convenience_fee
+        #platform fee + gst are checkout level charges, so its not included here
+        total_amount = subtotal 
 
         branch = db.get(CafeBranch, cart.branch_id)
         if not branch:

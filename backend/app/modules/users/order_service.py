@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.modules.orders.repository import OrderRepository
 from app.modules.payments.repository import PaymentRepository
 
-from app.modules.orders.constants import OrderStatus
+from app.modules.orders.constants import OrderStatus, PaymentStatus
 from app.modules.orders.models import PaymentEvent
 from app.modules.payments.models import (
     PaymentIntent,
@@ -82,15 +82,11 @@ def get_order_classification(order) -> str | None:
     return None
 
 
-def build_order_bill(order, items):
-    """
-    Build the bill from the persisted order data.
-
-    Order total is authoritative.
-    Subtotal is calculated from order items.
-    Convenience fee is the remaining amount.
-    """
-
+def build_order_bill(
+    order,
+    items,
+    intent=None,
+):
     subtotal = sum(
         (
             Decimal(str(item.price_at_time))
@@ -100,12 +96,38 @@ def build_order_bill(order, items):
         Decimal("0.00"),
     )
 
-    total = Decimal(str(order.total_amount))
+    platform_fee = Decimal("0.00")
+    gst = Decimal("0.00")
+    convenience_fee = Decimal("0.00")
 
-    convenience_fee = total - subtotal
+    # ------------------------------------------------------------
+    # Checkout fee belongs only to the anchor order.
+    # ------------------------------------------------------------
+
+    if intent and intent.order_id == order.order_id:
+
+        platform_fee = Decimal(
+            str(intent.platform_fee)
+        )
+
+        gst = Decimal(
+            str(intent.gst)
+        )
+
+        convenience_fee = Decimal(
+            str(intent.checkout_fee)
+        )
+
+    total = (
+        subtotal + convenience_fee
+    ).quantize(
+        Decimal("0.01")
+    )
 
     return {
         "subtotal": float(subtotal),
+        "platform_fee": float(platform_fee),
+        "gst": float(gst),
         "convenience_fee": float(convenience_fee),
         "total": float(total),
     }
@@ -215,14 +237,7 @@ class UserOrderService:
             order.order_id,
         )
 
-        # --------------------------------------------------------
-        # Bill
-        # --------------------------------------------------------
-
-        bill = build_order_bill(
-            order,
-            items,
-        )
+        
 
         # --------------------------------------------------------
         # GEt payment information
@@ -244,6 +259,18 @@ class UserOrderService:
                 )
             )
 
+        paid_event = (
+            db.query(PaymentEvent)
+            .filter(
+                PaymentEvent.order_id == order.order_id,
+                PaymentEvent.payment_status == PaymentStatus.PAID.value,
+            )
+            .order_by(
+                PaymentEvent.created_at.desc()
+            )
+            .first()
+        )
+
         payment = {
             "status": order.payment_status,
 
@@ -264,7 +291,23 @@ class UserOrderService:
                 if payment_attempt
                else None
            ),
+
+            "paid_at": (
+                paid_event.created_at
+                if paid_event
+                else None
+            )
         }
+
+        # --------------------------------------------------------
+        # Bill
+        # --------------------------------------------------------
+        
+        bill = build_order_bill(
+            order,
+            items,
+            intent,
+        )
 
         # ============================================================
         # 5. GET ORDER STATUS TIMELINE
@@ -298,6 +341,11 @@ class UserOrderService:
             "cafe_id": order.cafe_id,
             "cafe_name": cafe.branch_name if cafe else None,
             "branch_id": order.branch_id,
+            "fssai_license_number": (
+                cafe.fssai_license_number
+                if cafe
+                else None
+            ),
 
             "bill": bill,
             "payment": payment,

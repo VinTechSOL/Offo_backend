@@ -58,6 +58,57 @@ class UserTicketListItem(BaseModel):
 
 
 # =========================================================
+# TICKET MESSAGES
+# =========================================================
+
+class TicketMessageCreate(BaseModel):
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+    )
+
+
+class TicketMessageResponse(BaseModel):
+    message_id: int
+    ticket_id: int
+
+    sender_type: str
+    sender_id: int
+
+    message: str
+
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class TicketDetailResponse(BaseModel):
+    ticket_id: int
+
+    order_id: int
+    order_item_id: int | None
+
+    issue_type: str
+    description: str
+
+    image_url: str | None
+
+    status: TicketStatus
+
+    created_at: datetime
+    updated_at: datetime
+
+    messages: list[TicketMessageResponse] = Field(
+        default_factory=list
+    )
+
+    class Config:
+        from_attributes = True
+
+
+# =========================================================
 # ADMIN - TICKET
 # =========================================================
 
