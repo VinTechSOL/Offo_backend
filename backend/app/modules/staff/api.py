@@ -1,6 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status,Query,Request, Response
 from sqlalchemy.orm import Session
-
+from datetime import date
 from app.core.database import get_db
 from app.core.security import get_current_staff
 from app.modules.staff.schemas import (
@@ -48,9 +48,8 @@ def staff_login(
         key="staff_refresh_token",
         value=refresh_token,
         httponly=True,
-        secure=True,
+        secure=False,  # development only
         samesite="lax",
-        domain="offo.co.in",
         max_age=30 * 24 * 60 * 60,
         path="/staff/auth",
     )
@@ -326,14 +325,17 @@ def get_users_by_branch(
 def get_reports(
     branch_ids: list[int] = Query(...),
     range: str = Query("month"),
-    db: Session = Depends(get_db)
+    start_date: date | None = Query(None),
+    end_date: date | None = Query(None),
+    db: Session = Depends(get_db),
 ):
     return AdminReportService.get_reports(
         db=db,
         branch_ids=branch_ids,
-        range=range
+        range=range,
+        start_date=start_date,
+        end_date=end_date,
     )
-
 
 # =========================================================
 # Get Overview dashboard (SUPER ADMIN ONLY)
