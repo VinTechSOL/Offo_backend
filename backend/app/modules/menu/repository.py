@@ -70,14 +70,45 @@ class MenuRepository:
         return branch_item
 
     @staticmethod
-    def update_branch_item(db: Session, branch_menu_item_id: int, data):
+    def update_branch_item(
+        db: Session,
+        branch_menu_item_id: int,
+        data,
+    ):
         item = db.get(BranchMenuItem, branch_menu_item_id)
+
+        if not item:
+            raise HTTPException(
+                status_code=404,
+                detail="Branch menu item not found",
+            )
 
         if data.price is not None:
             item.price = data.price
+
         if data.is_available is not None:
             item.is_available = data.is_available
+
+        if data.category_id is not None:
+            category = db.get(MenuCategory, data.category_id)
+
+            if not category:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Category not found",
+                )
+
+            if category.branch_id != item.branch_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Category does not belong to this branch",
+                )
+
+            item.category_id = data.category_id
+
         db.commit()
+        db.refresh(item)
+
         return item
     
     @staticmethod
@@ -99,7 +130,7 @@ class MenuRepository:
             BranchMenuItem.item_id,
             BranchMenuItem.price,
             BranchMenuItem.is_available,
-
+            MenuCategory.category_id,
             MenuCategory.category_name,
 
             MenuItem.item_name,
@@ -124,7 +155,9 @@ class MenuRepository:
               "image_url": r.image_url,
               "food_type": r.item_type.lower(),
               "is_available": r.is_available,
+              "category_id": r.category_id,
               "category_name": r.category_name,
+              "item_description": r.item_description,
               
           }
           for r in rows

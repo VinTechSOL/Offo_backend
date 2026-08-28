@@ -52,8 +52,9 @@ def set_refresh_cookie(
         value=refresh_token,
         max_age=REFRESH_COOKIE_MAX_AGE,
         httponly=True,
-        secure=False,
+        secure=True,
         samesite="lax",
+        domain="offo.co.in",
         path="/",
     )
 

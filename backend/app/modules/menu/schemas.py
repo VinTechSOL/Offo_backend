@@ -35,6 +35,7 @@ class BranchMenuItemCreate(BaseModel):
 class BranchMenuItemUpdate(BaseModel):
     price: float | None = None
     is_available: bool | None = None
+    category_id: int | None = None
 
 
 class MenuItemOut(BaseModel):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status,Query
+from fastapi import APIRouter, Depends, HTTPException, status,Query,Request, Response
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
@@ -14,10 +14,13 @@ from app.modules.staff.schemas import (
     StaffVerifyOTPResponse,
     StaffResetPasswordRequest,
     StaffResetPasswordResponse,
+    StaffLoginResponse,
+    StaffRefreshResponse,
 )
 from app.modules.staff.service import StaffAuthService
 from app.modules.orders.repository import OrderRepository
 from app.modules.staff.service import AdminReportService,DashboardService
+
 
 router = APIRouter(prefix="/staff", tags=["Staff Auth"])
 
@@ -25,17 +28,74 @@ router = APIRouter(prefix="/staff", tags=["Staff Auth"])
 # =========================================================
 # LOGIN (USED BY SUPER ADMIN + VENDOR)
 # =========================================================
-@router.post("/auth/login")
+@router.post("/auth/login", response_model=StaffLoginResponse)
 def staff_login(
     data: StaffLoginRequest,
-    db: Session = Depends(get_db)
+    response: Response,
+    db: Session = Depends(get_db),
 ):
-    return StaffAuthService.login(
+    result = StaffAuthService.login(
         db=db,
         username=data.username,
-        password=data.password
+        password=data.password,
     )
 
+    refresh_token = result.pop(
+        "refresh_token"
+    )
+
+    response.set_cookie(
+        key="staff_refresh_token",
+        value=refresh_token,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        domain="offo.co.in",
+        max_age=30 * 24 * 60 * 60,
+        path="/staff/auth",
+    )
+
+    return result
+
+# =========================================================
+# Refresh token for staff
+# =========================================================
+@router.post("/auth/refresh", response_model=StaffRefreshResponse)
+def refresh_access_token(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    print("\n========== REFRESH DEBUG ==========")
+    print("ALL COOKIES:", request.cookies)
+    print(
+        "STAFF REFRESH COOKIE:",
+        request.cookies.get("staff_refresh_token")
+    )
+    print("===================================\n")
+
+    refresh_token = request.cookies.get(
+        "staff_refresh_token"
+    )
+
+    result = StaffAuthService.refresh_access_token(
+        db=db,
+        raw_refresh_token=refresh_token,
+    )
+
+    new_refresh_token = result.pop("refresh_token")
+
+    response.set_cookie(
+        key="staff_refresh_token",
+        value=new_refresh_token,
+        httponly=True,
+        secure=False,
+        samesite="lax",
+        max_age=30 * 24 * 60 * 60,
+        path="/staff/auth",
+    )
+
+    return result
 # =========================================================
 # SEND RESET OTP (VENDOR)
 # =========================================================
@@ -288,3 +348,32 @@ def get_dashboard_overview(
         db=db,
         branch_ids=branch_ids
     )
+
+# =========================================================
+# Logout
+# =========================================================
+
+
+@router.post("/auth/logout")
+def staff_logout(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db),
+):
+    refresh_token = request.cookies.get(
+        "staff_refresh_token"
+    )
+
+    StaffAuthService.logout(
+        db=db,
+        raw_refresh_token=refresh_token,
+    )
+
+    response.delete_cookie(
+        key="staff_refresh_token",
+        path="/staff/auth",
+    )
+
+    return {
+        "message": "Logged out successfully"
+    }

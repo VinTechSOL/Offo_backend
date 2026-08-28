@@ -314,6 +314,7 @@ class OrderRepository:
             .join(Building, Building.building_id == Cafe.building_id)
             .filter(
                 Order.branch_id == branch_id,
+                Order.payment_status == PaymentStatus.PAID, 
                 Order.created_at >= start_of_day,
                 Order.created_at < end_of_day,
             )

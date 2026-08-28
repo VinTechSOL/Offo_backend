@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session  # noqa: I001
 from sqlalchemy import select
-from app.modules.staff.models import Staff
-
+from app.modules.staff.models import Staff, StaffRefreshToken
+from datetime import datetime, timezone
 class StaffRepository:
 
     @staticmethod
@@ -92,3 +92,27 @@ class StaffRepository:
             )
             .first()
         )
+
+
+    @staticmethod
+    def revoke_all_refresh_tokens(
+        db: Session,
+        staff_id: int,
+    ):
+        now = datetime.now(timezone.utc)
+
+        (
+            db.query(StaffRefreshToken)
+            .filter(
+                StaffRefreshToken.staff_id == staff_id,
+                StaffRefreshToken.revoked_at.is_(None),
+            )
+            .update(
+                {
+                    StaffRefreshToken.revoked_at: now,
+                },
+                synchronize_session=False,
+            )
+        )
+
+        db.flush()

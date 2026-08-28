@@ -15,9 +15,16 @@ class StaffLoginRequest(BaseModel):
 class StaffLoginResponse(BaseModel):
     access_token: str
     token_type: str = "Bearer"
+    staff_id: int
     role: str
+    branch_id: int | None = None
 
-
+class StaffRefreshResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    staff_id: int
+    role: str
+    branch_id: int | None = None
 # =========================================================
 # VENDOR MANAGEMENT
 # =========================================================
