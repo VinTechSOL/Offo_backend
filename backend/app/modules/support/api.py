@@ -24,6 +24,15 @@ from app.modules.support.schemas import (
     TicketStatusUpdate,
     FeedbackCreate,
     FeedbackResponse,
+    VendorTicketCreate,
+    VendorTicketResponse,
+    VendorTicketDetailResponse,
+    VendorTicketMessageCreate,
+    VendorTicketMessageResponse,
+    VendorFeedbackResponse,
+    AdminVendorTicketResponse,
+    AdminVendorTicketDetailResponse,
+    AdminVendorTicketMessageResponse,
 )
 
 from app.modules.support.service import (
@@ -40,7 +49,7 @@ from app.core.s3_service import (
     validate_upload,
     IMAGE_TYPES,
     MAX_IMAGE_SIZE,
-    delete_file
+    delete_file,
 )
 
 
@@ -111,8 +120,10 @@ async def create_ticket(
             image_url = upload_file(
                 file_obj=image.file,
                 filename=image.filename,
-                content_type=image.content_type
-                or "application/octet-stream",
+                content_type=(
+                    image.content_type
+                    or "application/octet-stream"
+                ),
                 folder="support/tickets",
             )
 
@@ -130,22 +141,31 @@ async def create_ticket(
         return ticket
 
     except HTTPException:
-        # If an image was uploaded but validation/business
-        # logic failed afterward, clean it up.
+        # S3 upload succeeded but ticket creation failed.
         if image_url:
             delete_file(image_url)
 
         raise
 
     except Exception:
-        # DB/S3/unexpected failure
+        # Unexpected DB/S3/application error.
         if image_url:
             delete_file(image_url)
 
+        db.rollback()
+
         raise HTTPException(
             status_code=500,
-            detail="Unable to raise ticket. Please try again.",
+            detail=(
+                "Unable to raise ticket. "
+                "Please try again."
+            ),
         )
+
+
+# =========================================================
+# USER - GET TICKETS
+# =========================================================
 
 
 @router.get(
@@ -153,6 +173,7 @@ async def create_ticket(
 )
 def get_my_tickets(
     db: Session = Depends(get_db),
+
     user=Depends(get_current_user),
 ):
     return SupportService.get_user_tickets(
@@ -161,9 +182,14 @@ def get_my_tickets(
     )
 
 
+# =========================================================
+# USER - GET SINGLE TICKET
+# =========================================================
+
+
 @router.get(
     "/tickets/{ticket_id}",
-    response_model=TicketDetailResponse
+    response_model=TicketDetailResponse,
 )
 def get_my_ticket(
     ticket_id: int,
@@ -179,14 +205,22 @@ def get_my_ticket(
     )
 
 
+# =========================================================
+# USER - TICKET MESSAGE
+# =========================================================
+
+
 @router.post(
     "/tickets/{ticket_id}/messages",
     response_model=TicketMessageResponse,
 )
 def create_user_ticket_message(
     ticket_id: int,
+
     data: TicketMessageCreate,
+
     db: Session = Depends(get_db),
+
     user=Depends(get_current_user),
 ):
     return SupportService.create_user_ticket_message(
@@ -195,6 +229,7 @@ def create_user_ticket_message(
         ticket_id=ticket_id,
         message_text=data.message,
     )
+
 
 # =========================================================
 # USER FEEDBACK
@@ -234,7 +269,211 @@ def get_my_feedback(
 
 
 # =========================================================
-# ADMIN TICKETS
+# VENDOR TICKETS
+# =========================================================
+#
+# Vendor can upload ONE image only while creating
+# the ticket.
+#
+# Vendor replies do NOT support image uploads.
+# =========================================================
+
+
+@router.post(
+    "/vendor/tickets",
+    response_model=VendorTicketResponse,
+)
+async def create_vendor_ticket(
+    category: str = Form(...),
+
+    severity: str = Form(...),
+
+    affected_order_ids: str | None = Form(
+        default=None,
+    ),
+
+    subject: str = Form(...),
+
+    description: str = Form(...),
+
+    image: UploadFile | None = File(
+        default=None,
+    ),
+
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    image_url: str | None = None
+
+    try:
+        # -------------------------------------------------
+        # 1. Validate image
+        # -------------------------------------------------
+
+        if image:
+            validate_upload(
+                image,
+                allowed_types=IMAGE_TYPES,
+                max_size=MAX_IMAGE_SIZE,
+            )
+
+        # -------------------------------------------------
+        # 2. Prepare vendor ticket data
+        # -------------------------------------------------
+
+        data = VendorTicketCreate(
+            category=category,
+            severity=severity,
+            affected_order_ids=affected_order_ids,
+            subject=subject,
+            description=description,
+        )
+
+        # -------------------------------------------------
+        # 3. Upload image to S3
+        # -------------------------------------------------
+
+        if image:
+            image_url = upload_file(
+                file_obj=image.file,
+                filename=image.filename,
+                content_type=(
+                    image.content_type
+                    or "application/octet-stream"
+                ),
+                folder="support/vendor-tickets",
+            )
+
+        # -------------------------------------------------
+        # 4. Create vendor ticket
+        # -------------------------------------------------
+
+        ticket = SupportService.create_vendor_ticket(
+            db=db,
+            staff=staff,
+            data=data,
+            image_url=image_url,
+        )
+
+        return ticket
+
+    except HTTPException:
+        # S3 upload succeeded but ticket creation failed.
+        if image_url:
+            delete_file(image_url)
+
+        raise
+
+    except Exception as e:
+        # Unexpected DB/S3/application error.
+        if image_url:
+            delete_file(image_url)
+
+        db.rollback()
+
+        print("create vendor ticket", repr(e))
+
+        raise
+
+
+# =========================================================
+# VENDOR - GET TICKETS
+# =========================================================
+
+
+@router.get(
+    "/vendor/tickets",
+    response_model=list[VendorTicketResponse],
+)
+def get_vendor_tickets(
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    return SupportService.get_vendor_tickets(
+        db=db,
+        staff=staff,
+    )
+
+
+# =========================================================
+# VENDOR - GET SINGLE TICKET
+# =========================================================
+
+
+@router.get(
+    "/vendor/tickets/{vendor_ticket_id}",
+    response_model=VendorTicketDetailResponse,
+)
+def get_vendor_ticket(
+    vendor_ticket_id: int,
+
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    return SupportService.get_vendor_ticket(
+        db=db,
+        staff=staff,
+        vendor_ticket_id=vendor_ticket_id,
+    )
+
+
+# =========================================================
+# VENDOR - REPLY TO TICKET
+# =========================================================
+#
+# IMPORTANT:
+# No image field here.
+#
+# Vendor can upload image ONLY when creating the ticket.
+# =========================================================
+
+
+@router.post(
+    "/vendor/tickets/{vendor_ticket_id}/messages",
+    response_model=VendorTicketMessageResponse,
+)
+def create_vendor_ticket_message(
+    vendor_ticket_id: int,
+
+    data: VendorTicketMessageCreate,
+
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    return SupportService.create_vendor_ticket_message(
+        db=db,
+        staff=staff,
+        vendor_ticket_id=vendor_ticket_id,
+        message_text=data.message,
+    )
+
+
+# =========================================================
+# VENDOR FEEDBACK
+# =========================================================
+
+
+@router.get(
+    "/vendor/feedback",
+    response_model=list[VendorFeedbackResponse],
+)
+def get_vendor_feedback(
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    return SupportService.get_vendor_feedbacks(
+        db=db,
+        staff=staff,
+    )
+
+
+# =========================================================
+# ADMIN - USER TICKETS
 # =========================================================
 
 
@@ -267,14 +506,22 @@ def get_admin_ticket(
     )
 
 
+# =========================================================
+# ADMIN - USER TICKET MESSAGE
+# =========================================================
+
+
 @router.post(
     "/admin/tickets/{ticket_id}/messages",
     response_model=TicketMessageResponse,
 )
 def create_admin_ticket_message(
     ticket_id: int,
+
     data: TicketMessageCreate,
+
     db: Session = Depends(get_db),
+
     staff=Depends(get_current_staff),
 ):
     return SupportService.create_admin_ticket_message(
@@ -283,6 +530,11 @@ def create_admin_ticket_message(
         ticket_id=ticket_id,
         message_text=data.message,
     )
+
+
+# =========================================================
+# ADMIN - UPDATE USER TICKET STATUS
+# =========================================================
 
 
 @router.patch(
@@ -305,7 +557,104 @@ def update_ticket_status(
 
 
 # =========================================================
-# ADMIN FEEDBACK
+# ADMIN - VENDOR TICKETS
+# =========================================================
+
+
+@router.get(
+    "/admin/vendor-tickets",
+    response_model=list[AdminVendorTicketResponse],
+)
+def get_admin_vendor_tickets(
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    return SupportService.get_admin_vendor_tickets(
+        db=db,
+        staff=staff,
+    )
+
+
+# =========================================================
+# ADMIN - GET SINGLE VENDOR TICKET
+# =========================================================
+
+
+@router.get(
+    "/admin/vendor-tickets/{vendor_ticket_id}",
+    response_model=AdminVendorTicketDetailResponse,
+)
+def get_admin_vendor_ticket(
+    vendor_ticket_id: int,
+
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    return SupportService.get_admin_vendor_ticket(
+        db=db,
+        staff=staff,
+        vendor_ticket_id=vendor_ticket_id,
+    )
+
+
+# =========================================================
+# ADMIN - REPLY TO VENDOR TICKET
+# =========================================================
+#
+# Admin reply is text-only.
+# =========================================================
+
+
+@router.post(
+    "/admin/vendor-tickets/{vendor_ticket_id}/messages",
+    response_model=AdminVendorTicketMessageResponse,
+)
+def create_admin_vendor_ticket_message(
+    vendor_ticket_id: int,
+
+    data: TicketMessageCreate,
+
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    return SupportService.create_admin_vendor_ticket_message(
+        db=db,
+        staff=staff,
+        vendor_ticket_id=vendor_ticket_id,
+        message_text=data.message,
+    )
+
+
+# =========================================================
+# ADMIN - UPDATE VENDOR TICKET STATUS
+# =========================================================
+
+
+@router.patch(
+    "/admin/vendor-tickets/{vendor_ticket_id}/status",
+)
+def update_vendor_ticket_status(
+    vendor_ticket_id: int,
+
+    data: TicketStatusUpdate,
+
+    db: Session = Depends(get_db),
+
+    staff=Depends(get_current_staff),
+):
+    return SupportService.update_vendor_ticket_status(
+        db=db,
+        staff=staff,
+        vendor_ticket_id=vendor_ticket_id,
+        status=data.status,
+    )
+
+
+# =========================================================
+# ADMIN - FEEDBACK
 # =========================================================
 
 

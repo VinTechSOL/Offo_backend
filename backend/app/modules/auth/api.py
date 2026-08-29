@@ -53,8 +53,8 @@ def set_refresh_cookie(
         max_age=REFRESH_COOKIE_MAX_AGE,
         httponly=True,
         secure=True,
+        domain=".offo.co.in",
         samesite="lax",
-        domain="offo.co.in",
         path="/",
     )
 

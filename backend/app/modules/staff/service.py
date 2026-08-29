@@ -306,6 +306,74 @@ class StaffAuthService:
         }
 
 
+    # =========================================================
+    # CHANGE OWN PASSWORD
+    # =========================================================
+
+    @staticmethod
+    def change_password(
+        db: Session,
+        staff: Staff,
+        new_password: str,
+    ):
+        # -----------------------------------------------------
+        # Validate password length
+        # -----------------------------------------------------
+
+        if len(new_password.encode("utf-8")) > 72:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must not exceed 72 bytes.",
+            )
+
+        if len(new_password) < 6:
+            raise HTTPException(
+                status_code=400,
+                detail="Password must be at least 6 characters long.",
+            )
+
+        # -----------------------------------------------------
+        # Ensure account is active
+        # -----------------------------------------------------
+
+        if not staff.is_active:
+            raise HTTPException(
+                status_code=403,
+                detail="Staff account is inactive.",
+            )
+
+        # -----------------------------------------------------
+        # Update password
+        # -----------------------------------------------------
+
+        staff.password_hash = pwd_context.hash(new_password)
+
+        # -----------------------------------------------------
+        # Revoke all existing refresh sessions
+        # -----------------------------------------------------
+
+        StaffRepository.revoke_all_refresh_tokens(
+            db=db,
+            staff_id=staff.staff_id,
+        )
+
+        try:
+            db.commit()
+            db.refresh(staff)
+
+        except SQLAlchemyError:
+            db.rollback()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Unable to update password.",
+            )
+
+        return {
+            "message": "Password updated successfully."
+        }
+
+
     @staticmethod
     def logout(
         db: Session,
@@ -1336,69 +1404,228 @@ class AdminReportService:
 
 
 # =========================================================
-    # CUSTOMISED ADMIN Overview
+# CUSTOMISED ADMIN OVERVIEW
 # =========================================================
 
 class DashboardService:
 
     @staticmethod
-    def get_overview(db: Session, branch_ids: list[int]):
+    def get_overview(
+        db: Session,
+        branch_ids: list[int],
+    ):
 
-        today = datetime.utcnow().date()
+        # =====================================================
+        # VALIDATE BRANCHES
+        # =====================================================
 
-        orders = (
+        if not branch_ids:
+            return {
+                "today_orders": 0,
+                "total_revenue": 0.0,
+                "avg_order_value": 0.0,
+                "revenue_trend": [],
+                "top_items": [],
+            }
+
+        # =====================================================
+        # CURRENT TIME
+        # =====================================================
+
+        now = datetime.now(timezone.utc)
+
+        # =====================================================
+        # TODAY RANGE
+        # =====================================================
+
+        start_of_today = now.replace(
+            hour=0,
+            minute=0,
+            second=0,
+            microsecond=0,
+        )
+
+        # =====================================================
+        # TODAY ORDERS
+        # =====================================================
+
+        today_orders = (
             db.query(Order)
             .filter(
                 Order.branch_id.in_(branch_ids),
-                func.date(Order.created_at) == today
+                Order.created_at >= start_of_today,
+                Order.created_at < now,
             )
             .all()
         )
 
-        total_orders = len(orders)
+        # =====================================================
+        # TODAY METRICS
+        # =====================================================
 
-        total_revenue = sum(float(o.total_amount) for o in orders)
+        total_orders = len(today_orders)
 
-        avg_order_value = (
-            total_revenue / total_orders if total_orders else 0
+        total_revenue = sum(
+            (
+                Decimal(str(order.total_amount))
+                for order in today_orders
+                if order.total_amount is not None
+            ),
+            Decimal("0"),
         )
 
-        # Weekly orders (simple mock aggregation for now)
+        avg_order_value = (
+            total_revenue / total_orders
+            if total_orders
+            else Decimal("0")
+        )
 
-        weekly_orders = [12, 18, 14, 22, 16, 25, 20]
+        # =====================================================
+        # LAST 7 DAYS RANGE
+        # =====================================================
 
-        # Top items
+        start_of_7_days = (
+            start_of_today - timedelta(days=6)
+        )
+
+        # =====================================================
+        # DAILY REVENUE
+        # =====================================================
+
+        revenue_rows = (
+            db.query(
+                func.date(Order.created_at).label("period"),
+                func.sum(Order.total_amount).label("revenue"),
+            )
+            .filter(
+                Order.branch_id.in_(branch_ids),
+                Order.created_at >= start_of_7_days,
+                Order.created_at < now,
+            )
+            .group_by(
+                func.date(Order.created_at)
+            )
+            .order_by(
+                func.date(Order.created_at)
+            )
+            .all()
+        )
+
+        # =====================================================
+        # CREATE REVENUE MAP
+        # =====================================================
+
+        revenue_map = {
+            row.period: float(row.revenue or 0)
+            for row in revenue_rows
+        }
+
+        # =====================================================
+        # BUILD COMPLETE 7-DAY TREND
+        # =====================================================
+
+        revenue_trend = []
+
+        for i in range(7):
+
+            current_date = (
+                start_of_7_days.date()
+                + timedelta(days=i)
+            )
+
+            revenue_trend.append(
+                {
+                    "label": current_date.strftime("%d %b"),
+                    "date": current_date.isoformat(),
+                    "revenue": revenue_map.get(
+                        current_date,
+                        0.0,
+                    ),
+                }
+            )
+
+        # =====================================================
+        # TOP SELLING ITEMS
+        # Last 7 days
+        # =====================================================
 
         rows = (
             db.query(
                 MenuItem.item_name,
-                func.sum(OrderItem.quantity).label("sales"),
                 func.sum(
-                    OrderItem.quantity * OrderItem.price_at_time
+                    OrderItem.quantity
+                ).label("sales"),
+                func.sum(
+                    OrderItem.quantity
+                    * OrderItem.price_at_time
                 ).label("revenue"),
             )
-            .join(OrderItem, OrderItem.item_id == MenuItem.item_id)
-            .join(Order, Order.order_id == OrderItem.order_id)
-            .filter(Order.branch_id.in_(branch_ids))
-            .group_by(MenuItem.item_name)
-            .order_by(func.sum(OrderItem.quantity).desc())
+            .join(
+                OrderItem,
+                OrderItem.item_id == MenuItem.item_id,
+            )
+            .join(
+                Order,
+                Order.order_id == OrderItem.order_id,
+            )
+            .filter(
+                Order.branch_id.in_(branch_ids),
+                Order.created_at >= start_of_7_days,
+                Order.created_at < now,
+            )
+            .group_by(
+                MenuItem.item_name
+            )
+            .order_by(
+                func.sum(
+                    OrderItem.quantity
+                ).desc()
+            )
             .limit(3)
             .all()
         )
 
         top_items = [
             {
-                "name": r.item_name,
-                "sales": int(r.sales),
-                "revenue": float(r.revenue),
+                "name": row.item_name,
+                "sales": int(row.sales or 0),
+                "revenue": float(row.revenue or 0),
             }
-            for r in rows
+            for row in rows
         ]
+
+        # =====================================================
+        # DEBUG
+        # =====================================================
+
+        print("\n========== DASHBOARD OVERVIEW ==========")
+        print("Branch IDs:", branch_ids)
+        print("Today Start:", start_of_today)
+        print("Now:", now)
+        print("Today's Orders:", total_orders)
+        print("Today's Revenue:", total_revenue)
+        print("Today's AOV:", avg_order_value)
+        print("Revenue Trend:", revenue_trend)
+        print("Top Items:", top_items)
+        print("========================================\n")
+
+        # =====================================================
+        # RESPONSE
+        # =====================================================
 
         return {
             "today_orders": total_orders,
-            "total_revenue": total_revenue,
-            "avg_order_value": round(avg_order_value),
-            "weekly_orders": weekly_orders,
-            "top_items": top_items
+
+            "total_revenue": float(
+                total_revenue
+            ),
+
+            "avg_order_value": round(
+                float(avg_order_value),
+                2,
+            ),
+
+            "revenue_trend": revenue_trend,
+
+            "top_items": top_items,
         }

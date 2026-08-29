@@ -99,7 +99,10 @@ class VendorRepository:
         if not branch:
             return None
 
-        update_data = data.model_dump()
+        update_data = data.model_dump(
+            exclude_unset=True,
+            exclude_none=True,
+        )
 
         for field, value in update_data.items():
            if hasattr(branch, field): 
@@ -116,11 +119,54 @@ class VendorRepository:
         db: Session,
         branch_id: int,
     ):
-        return (
-            db.query(CafeBranch)
-            .filter(CafeBranch.branch_id == branch_id)
+        row = (
+            db.query(
+                CafeBranch,
+                City.city_name,
+                Campus.campus_name,
+                Building.building_name,
+            )
+            .join(
+                City,
+                City.city_id == CafeBranch.city_id,
+            )
+            .join(
+                Campus,
+                Campus.campus_id == CafeBranch.campus_id,
+            )
+            .outerjoin(
+                Building,
+                Building.building_id == CafeBranch.building_id,
+            )
+            .filter(
+                CafeBranch.branch_id == branch_id
+            )
             .first()
         )
+
+        if not row:
+            return None
+
+        branch = row[0]
+
+        documents = (
+            db.query(BranchDocument)
+            .filter(
+                BranchDocument.branch_id == branch_id
+            )
+            .order_by(
+                BranchDocument.document_id
+            )
+            .all()
+        )
+
+        return {
+            "branch": branch,
+            "city_name": row.city_name,
+            "campus_name": row.campus_name,
+            "building_name": row.building_name,
+            "documents": documents,
+        }
 
     @staticmethod
     def get_branch_by_owner_phone(

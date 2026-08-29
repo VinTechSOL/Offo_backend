@@ -1,8 +1,14 @@
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-from datetime import datetime, timezone
+
 from app.modules.support.models import (
-    Ticket,Feedback,TicketMessage
+    Ticket,
+    Feedback,
+    TicketMessage,
+    VendorTicket,
+    VendorTicketMessage,
 )
 
 from app.modules.support.repository import (
@@ -21,7 +27,10 @@ from app.modules.orders.repository import (
     OrderRepository,
 )
 
-from app.modules.notifications.service import NotificationService
+from app.modules.notifications.service import (
+    NotificationService,
+)
+
 from app.modules.notifications.constants import (
     NotificationRecipient,
     NotificationPriority,
@@ -32,7 +41,7 @@ from app.modules.notifications.constants import (
 class SupportService:
 
     # =====================================================
-    # TICKETS
+    # USER TICKETS
     # =====================================================
 
     @staticmethod
@@ -60,11 +69,12 @@ class SupportService:
             )
 
         # ---------------------------------------------
-        # 2. Ticket should only be raised for completed
-        #    or otherwise terminal orders
+        # 2. Ticket only for terminal orders
         # ---------------------------------------------
 
-        order_status = str(order.order_status).strip().upper()
+        order_status = str(
+            order.order_status
+        ).strip().upper()
 
         allowed_statuses = {
             OrderStatus.COMPLETED.value,
@@ -75,11 +85,14 @@ class SupportService:
         if order_status not in allowed_statuses:
             raise HTTPException(
                 status_code=400,
-                detail="Tickets can only be raised for completed, cancelled, or rejected orders",
+                detail=(
+                    "Tickets can only be raised for "
+                    "completed, cancelled, or rejected orders"
+                ),
             )
 
         # ---------------------------------------------
-        # 3. Validate selected order item
+        # 3. Validate order item
         # ---------------------------------------------
 
         order_item = None
@@ -98,7 +111,10 @@ class SupportService:
             if not order_item:
                 raise HTTPException(
                     status_code=400,
-                    detail="Selected item does not belong to this order",
+                    detail=(
+                        "Selected item does not belong "
+                        "to this order"
+                    ),
                 )
 
         # ---------------------------------------------
@@ -116,7 +132,7 @@ class SupportService:
             issue_type=data.issue_type.value,
             description=data.description.strip(),
             image_url=image_url,
-            status=TicketStatus.OPEN,
+            status=TicketStatus.OPEN.value,
         )
 
         SupportRepository.create_ticket(
@@ -157,9 +173,11 @@ class SupportService:
                 detail="Ticket not found",
             )
 
-        messages = SupportRepository.get_ticket_messages(
-            db,
-            ticket.ticket_id,
+        messages = (
+            SupportRepository.get_ticket_messages(
+                db,
+                ticket.ticket_id,
+            )
         )
 
         return {
@@ -174,7 +192,6 @@ class SupportService:
             "updated_at": ticket.updated_at,
             "messages": messages,
         }
-
 
     @staticmethod
     def create_user_ticket_message(
@@ -195,7 +212,6 @@ class SupportService:
                 detail="Ticket not found",
             )
 
-        # Closed tickets are no longer conversational.
         if ticket.status == TicketStatus.CLOSED.value:
             raise HTTPException(
                 status_code=400,
@@ -222,7 +238,9 @@ class SupportService:
             message,
         )
 
-        ticket.updated_at = datetime.now(timezone.utc)
+        ticket.updated_at = datetime.now(
+            timezone.utc
+        )
 
         db.commit()
         db.refresh(message)
@@ -230,7 +248,7 @@ class SupportService:
         return message
 
     # =====================================================
-    # ADMIN TICKETS
+    # ADMIN - USER TICKETS
     # =====================================================
 
     @staticmethod
@@ -268,7 +286,8 @@ class SupportService:
                 "user_id": user.user_id,
 
                 "customer_name":
-                    f"{user.first_name} {user.last_name}".strip(),
+                    f"{user.first_name} "
+                    f"{user.last_name}".strip(),
 
                 "cafe_id": order.cafe_id,
 
@@ -324,9 +343,11 @@ class SupportService:
             menu_item,
         ) = row
 
-        messages = SupportRepository.get_ticket_messages(
-            db,
-            ticket.ticket_id
+        messages = (
+            SupportRepository.get_ticket_messages(
+                db,
+                ticket.ticket_id,
+            )
         )
 
         return {
@@ -345,7 +366,8 @@ class SupportService:
             "user_id": user.user_id,
 
             "customer_name":
-                f"{user.first_name} {user.last_name}".strip(),
+                f"{user.first_name} "
+                f"{user.last_name}".strip(),
 
             "cafe_id": order.cafe_id,
 
@@ -393,8 +415,6 @@ class SupportService:
                 detail="Ticket not found",
             )
 
-        # Keep the old status so we only notify when
-        # an actual status change happens.
         old_status = ticket.status
 
         SupportRepository.update_ticket_status(
@@ -406,13 +426,11 @@ class SupportService:
         db.commit()
         db.refresh(ticket)
 
-        # ---------------------------------------------
-        # Notify user when ticket status changes
-        # ---------------------------------------------
-
         if old_status != ticket.status:
 
-            display_ticket_id = f"TKT-{ticket.ticket_id:06d}"
+            display_ticket_id = (
+                f"TKT-{ticket.ticket_id:06d}"
+            )
 
             NotificationService.trigger(
                 db,
@@ -421,16 +439,17 @@ class SupportService:
                 recipient_id=ticket.user_id,
                 title="Support Ticket Updated",
                 message=(
-                    f"Hey! Your support ticket {display_ticket_id} "
-                    f"is now {ticket.status}."
+                    f"Hey! Your support ticket "
+                    f"{display_ticket_id} is now "
+                    f"{ticket.status}."
                 ),
                 priority=NotificationPriority.MEDIUM,
                 order_id=ticket.order_id,
-           )
+            )
 
+            db.commit()
 
         return ticket
-
 
     @staticmethod
     def create_admin_ticket_message(
@@ -476,15 +495,12 @@ class SupportService:
             message,
         )
 
-        ticket.updated_at = datetime.now(timezone.utc)
+        ticket.updated_at = datetime.now(
+            timezone.utc
+        )
 
-        # First commit the actual message.
         db.commit()
         db.refresh(message)
-
-        # -------------------------------------------------
-        # Notify customer AFTER message is committed.
-        # -------------------------------------------------
 
         display_ticket_id = (
             f"TKT-{ticket.ticket_id:06d}"
@@ -509,7 +525,844 @@ class SupportService:
         return message
 
     # =====================================================
-    # FEEDBACK
+    # VENDOR - CREATE TICKET
+    # =====================================================
+
+    @staticmethod
+    def create_vendor_ticket(
+        db: Session,
+        staff,
+        data,
+        image_url: str | None = None,
+    ):
+        # -------------------------------------------------
+        # 1. Validate vendor account
+        # -------------------------------------------------
+
+        if staff.role.role_name != "VENDOR":
+            raise HTTPException(
+                status_code=403,
+                detail="Only vendors can create vendor support tickets",
+            )
+
+        # -------------------------------------------------
+        # 2. Vendor must belong to a branch
+        # -------------------------------------------------
+
+        if staff.branch_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Vendor is not assigned to a branch",
+            )
+
+        # -------------------------------------------------
+        # 3. Clean input
+        # -------------------------------------------------
+
+        subject = data.subject.strip()
+        description = data.description.strip()
+
+        if not subject:
+            raise HTTPException(
+                status_code=400,
+                detail="Subject cannot be empty",
+            )
+
+        if not description:
+            raise HTTPException(
+                status_code=400,
+                detail="Description cannot be empty",
+            )
+
+        affected_order_ids = (
+            data.affected_order_ids.strip()
+            if data.affected_order_ids
+            else None
+        )
+
+        # -------------------------------------------------
+        # 4. Create vendor ticket
+        # -------------------------------------------------
+
+        ticket = VendorTicket(
+            vendor_staff_id=staff.staff_id,
+            category=data.category.strip(),
+            severity=data.severity.strip().upper(),
+            affected_order_ids=affected_order_ids,
+            subject=subject,
+            description=description,
+            image_url=image_url,
+            status=TicketStatus.OPEN.value,
+        )
+
+        SupportRepository.create_vendor_ticket(
+            db,
+            ticket,
+        )
+
+        # -------------------------------------------------
+        # 5. Create initial conversation message
+        # -------------------------------------------------
+
+        message = VendorTicketMessage(
+            vendor_ticket_id=ticket.vendor_ticket_id,
+            sender_type="VENDOR",
+            sender_id=staff.staff_id,
+            message=description,
+        )
+
+        SupportRepository.create_vendor_ticket_message(
+            db,
+            message,
+        )
+
+        # -------------------------------------------------
+        # 6. Commit ticket + initial message
+        # -------------------------------------------------
+
+        db.commit()
+
+        db.refresh(ticket)
+
+        # -------------------------------------------------
+        # 7. Return API response
+        # -------------------------------------------------
+
+        return {
+            "vendor_ticket_id": ticket.vendor_ticket_id,
+            "display_ticket_id": f"TKT-{ticket.vendor_ticket_id:06d}",
+            "vendor_staff_id": ticket.vendor_staff_id,
+            "category": ticket.category,
+            "severity": ticket.severity,
+            "affected_order_ids": ticket.affected_order_ids,
+            "subject": ticket.subject,
+            "description": ticket.description,
+            "image_url": ticket.image_url,
+            "status": ticket.status,
+            "created_at": ticket.created_at,
+            "updated_at": ticket.updated_at,
+        }
+
+    # =====================================================
+    # VENDOR - GET TICKETS
+    # =====================================================
+
+    @staticmethod
+    def get_vendor_tickets(
+        db: Session,
+        staff,
+    ):
+        if staff.role.role_name != "VENDOR":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Only vendors can access "
+                    "vendor tickets"
+                ),
+            )
+
+        tickets = SupportRepository.get_vendor_tickets(
+            db,
+            staff.staff_id,
+        )
+
+        result = []
+
+        for ticket in tickets:
+
+            result.append({
+                "vendor_ticket_id":
+                    ticket.vendor_ticket_id,
+
+                "display_ticket_id":
+                    f"TKT-{ticket.vendor_ticket_id:06d}",
+
+                "vendor_staff_id":
+                    ticket.vendor_staff_id,
+
+                "category":
+                    ticket.category,
+
+                "severity":
+                    ticket.severity,
+
+                "affected_order_ids":
+                    ticket.affected_order_ids,
+
+                "subject":
+                    ticket.subject,
+
+                "description":
+                    ticket.description,
+
+                "image_url":
+                    ticket.image_url,
+
+                "status":
+                    ticket.status,
+
+                "created_at":
+                    ticket.created_at,
+
+                "updated_at":
+                    ticket.updated_at,
+            })
+
+        return result
+
+    # =====================================================
+    # VENDOR - GET SINGLE TICKET
+    # =====================================================
+
+    @staticmethod
+    def get_vendor_ticket(
+        db: Session,
+        staff,
+        vendor_ticket_id: int,
+    ):
+        if staff.role.role_name != "VENDOR":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Only vendors can access "
+                    "vendor tickets"
+                ),
+            )
+
+        ticket = SupportRepository.get_vendor_ticket(
+            db,
+            staff.staff_id,
+            vendor_ticket_id,
+        )
+
+        if not ticket:
+            raise HTTPException(
+                status_code=404,
+                detail="Ticket not found",
+            )
+
+        messages = (
+            SupportRepository.get_vendor_ticket_messages(
+                db,
+                ticket.vendor_ticket_id,
+            )
+        )
+
+        return {
+            "vendor_ticket_id":
+                ticket.vendor_ticket_id,
+
+            "display_ticket_id":
+                f"TKT-{ticket.vendor_ticket_id:06d}",
+
+            "vendor_staff_id":
+                ticket.vendor_staff_id,
+
+            "category":
+                ticket.category,
+
+            "severity":
+                ticket.severity,
+
+            "affected_order_ids":
+                ticket.affected_order_ids,
+
+            "subject":
+                ticket.subject,
+
+            "description":
+                ticket.description,
+
+            "image_url":
+                ticket.image_url,
+
+            "status":
+                ticket.status,
+
+            "created_at":
+                ticket.created_at,
+
+            "updated_at":
+                ticket.updated_at,
+
+            "messages":
+                messages,
+        }
+
+    # =====================================================
+    # VENDOR - REPLY
+    # =====================================================
+
+    @staticmethod
+    def create_vendor_ticket_message(
+        db: Session,
+        staff,
+        vendor_ticket_id: int,
+        message_text: str,
+    ):
+        if staff.role.role_name != "VENDOR":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Only vendors can reply "
+                    "to vendor tickets"
+                ),
+            )
+
+        ticket = SupportRepository.get_vendor_ticket(
+            db,
+            staff.staff_id,
+            vendor_ticket_id,
+        )
+
+        if not ticket:
+            raise HTTPException(
+                status_code=404,
+                detail="Ticket not found",
+            )
+
+        if ticket.status == TicketStatus.CLOSED.value:
+            raise HTTPException(
+                status_code=400,
+                detail="This ticket is closed",
+            )
+
+        message_text = message_text.strip()
+
+        if not message_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Message cannot be empty",
+            )
+
+        message = VendorTicketMessage(
+            vendor_ticket_id=ticket.vendor_ticket_id,
+            sender_type="VENDOR",
+            sender_id=staff.staff_id,
+            message=message_text,
+        )
+
+        SupportRepository.create_vendor_ticket_message(
+            db,
+            message,
+        )
+
+        ticket.updated_at = datetime.now(
+            timezone.utc
+        )
+
+        db.commit()
+        db.refresh(message)
+
+        return message
+
+    # =====================================================
+    # VENDOR - FEEDBACK
+    # =====================================================
+
+    @staticmethod
+    def get_vendor_feedbacks(
+        db: Session,
+        staff,
+    ):
+        if staff.role.role_name != "VENDOR":
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Only vendors can access "
+                    "branch feedback"
+                ),
+            )
+
+        if staff.branch_id is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Vendor is not assigned "
+                    "to a branch"
+                ),
+            )
+
+        rows = SupportRepository.get_feedbacks_for_vendor(
+            db,
+            staff.branch_id,
+        )
+
+        result = []
+
+        for (
+            feedback,
+            order,
+            user,
+            branch,
+        ) in rows:
+
+            result.append({
+                "feedback_id":
+                    feedback.feedback_id,
+
+                "display_feedback_id":
+                    f"FB-{feedback.feedback_id:06d}",
+
+                "order_id":
+                    order.order_id,
+
+                "display_order_id":
+                    OrderRepository.build_display_order_id(
+                        order
+                    ),
+
+                "user_id":
+                    user.user_id,
+
+                "customer_name":
+                    f"{user.first_name} "
+                    f"{user.last_name}".strip(),
+
+                "food_rating":
+                    feedback.food_rating,
+
+                "comments":
+                    feedback.comments,
+
+                "created_at":
+                    feedback.created_at,
+            })
+
+        return result
+
+    # =====================================================
+    # ADMIN - GET ALL VENDOR TICKETS
+    # =====================================================
+
+    @staticmethod
+    def get_admin_vendor_tickets(
+        db: Session,
+        staff,
+    ):
+        # ---------------------------------------------
+        # 1. Validate admin access
+        # ---------------------------------------------
+
+        if staff.role.role_name not in {
+            "SUPER_ADMIN",
+            "VENDOR_ADMIN",
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied",
+            )
+
+        # ---------------------------------------------
+        # 2. Get tickets
+        # ---------------------------------------------
+
+        rows = (
+            SupportRepository
+            .get_vendor_tickets_for_admin(
+                db,
+            )
+        )
+
+        result = []
+
+        for (
+            ticket,
+            vendor,
+            branch,
+        ) in rows:
+
+            result.append({
+                "vendor_ticket_id":
+                    ticket.vendor_ticket_id,
+
+                "display_ticket_id":
+                    f"TKT-{ticket.vendor_ticket_id:06d}",
+
+                "vendor_staff_id":
+                    vendor.staff_id,
+
+                "vendor_name":
+                    f"{vendor.first_name} "
+                    f"{vendor.last_name}".strip(),
+
+                "vendor_username":
+                    vendor.username,
+
+                "cafe_id":
+                    branch.cafe_id
+                    if branch
+                    else None,
+
+                "cafe_name":
+                    branch.branch_name
+                    if branch
+                    else None,
+
+                "branch_id":
+                    branch.branch_id
+                    if branch
+                    else None,
+
+                "branch_name":
+                    branch.branch_name
+                    if branch
+                    else None,
+
+                "category":
+                    ticket.category,
+
+                "severity":
+                    ticket.severity,
+
+                "affected_order_ids":
+                    ticket.affected_order_ids,
+
+                "subject":
+                    ticket.subject,
+
+                "description":
+                    ticket.description,
+
+                "image_url":
+                    ticket.image_url,
+
+                "status":
+                    ticket.status,
+
+                "created_at":
+                    ticket.created_at,
+
+                "updated_at":
+                    ticket.updated_at,
+            })
+
+        return result
+
+    # =====================================================
+    # ADMIN - GET SINGLE VENDOR TICKET
+    # =====================================================
+
+    @staticmethod
+    def get_admin_vendor_ticket(
+        db: Session,
+        staff,
+        vendor_ticket_id: int,
+    ):
+        # ---------------------------------------------
+        # 1. Validate admin access
+        # ---------------------------------------------
+
+        if staff.role.role_name not in {
+            "SUPER_ADMIN",
+            "VENDOR_ADMIN",
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied",
+            )
+
+        # ---------------------------------------------
+        # 2. Get ticket + vendor + branch
+        # ---------------------------------------------
+
+        row = (
+            SupportRepository
+            .get_vendor_ticket_for_admin(
+                db,
+                vendor_ticket_id,
+            )
+        )
+
+        if not row:
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor ticket not found",
+            )
+
+        (
+            ticket,
+            vendor,
+            branch,
+        ) = row
+
+        # ---------------------------------------------
+        # 3. Get conversation
+        # ---------------------------------------------
+
+        messages = (
+            SupportRepository
+            .get_vendor_ticket_messages(
+                db,
+                ticket.vendor_ticket_id,
+            )
+        )
+
+        # ---------------------------------------------
+        # 4. Return detail
+        # ---------------------------------------------
+
+        return {
+            "vendor_ticket_id":
+                ticket.vendor_ticket_id,
+
+            "display_ticket_id":
+                f"TKT-{ticket.vendor_ticket_id:06d}",
+
+            "vendor_staff_id":
+                vendor.staff_id,
+
+            "vendor_name":
+                f"{vendor.first_name} "
+                f"{vendor.last_name}".strip(),
+
+            "vendor_username":
+                vendor.username,
+
+            "cafe_id":
+                branch.cafe_id
+                if branch
+                else None,
+
+            "cafe_name":
+                branch.branch_name
+                if branch
+                else None,
+
+            "branch_id":
+                branch.branch_id
+                if branch
+                else None,
+
+            "branch_name":
+                branch.branch_name
+                if branch
+                else None,
+
+            "category":
+                ticket.category,
+
+            "severity":
+                ticket.severity,
+
+            "affected_order_ids":
+                ticket.affected_order_ids,
+
+            "subject":
+                ticket.subject,
+
+            "description":
+                ticket.description,
+
+            "image_url":
+                ticket.image_url,
+
+            "status":
+                ticket.status,
+
+            "created_at":
+                ticket.created_at,
+
+            "updated_at":
+                ticket.updated_at,
+
+            "messages":
+                messages,
+        }
+
+    # =====================================================
+    # ADMIN - REPLY TO VENDOR TICKET
+    # =====================================================
+
+    @staticmethod
+    def create_admin_vendor_ticket_message(
+        db: Session,
+        staff,
+        vendor_ticket_id: int,
+        message_text: str,
+    ):
+        # ---------------------------------------------
+        # 1. Validate admin access
+        # ---------------------------------------------
+
+        if staff.role.role_name not in {
+            "SUPER_ADMIN",
+            "VENDOR_ADMIN",
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied",
+            )
+
+        # ---------------------------------------------
+        # 2. Get ticket
+        # ---------------------------------------------
+
+        row = (
+            SupportRepository
+            .get_vendor_ticket_for_admin(
+                db,
+                vendor_ticket_id,
+            )
+        )
+
+        if not row:
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor ticket not found",
+            )
+
+        (
+            ticket,
+            vendor,
+            branch,
+        ) = row
+
+        # ---------------------------------------------
+        # 3. Closed tickets cannot receive messages
+        # ---------------------------------------------
+
+        if ticket.status == TicketStatus.CLOSED.value:
+            raise HTTPException(
+                status_code=400,
+                detail="This ticket is closed",
+            )
+
+        # ---------------------------------------------
+        # 4. Validate message
+        # ---------------------------------------------
+
+        message_text = message_text.strip()
+
+        if not message_text:
+            raise HTTPException(
+                status_code=400,
+                detail="Message cannot be empty",
+            )
+
+        # ---------------------------------------------
+        # 5. Create message
+        # ---------------------------------------------
+
+        message = VendorTicketMessage(
+            vendor_ticket_id=ticket.vendor_ticket_id,
+            sender_type="ADMIN",
+            sender_id=staff.staff_id,
+            message=message_text,
+        )
+
+        SupportRepository.create_vendor_ticket_message(
+            db,
+            message,
+        )
+
+        # ---------------------------------------------
+        # 6. Update ticket timestamp
+        # ---------------------------------------------
+
+        ticket.updated_at = datetime.now(
+            timezone.utc
+        )
+
+        # ---------------------------------------------
+        # 7. Commit
+        # ---------------------------------------------
+
+        db.commit()
+        db.refresh(message)
+
+        return message
+
+    # =====================================================
+    # ADMIN - UPDATE VENDOR TICKET STATUS
+    # =====================================================
+
+    @staticmethod
+    def update_vendor_ticket_status(
+        db: Session,
+        staff,
+        vendor_ticket_id: int,
+        status: TicketStatus,
+    ):
+        # ---------------------------------------------
+        # 1. Validate admin access
+        # ---------------------------------------------
+
+        if staff.role.role_name not in {
+            "SUPER_ADMIN",
+            "VENDOR_ADMIN",
+        }:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied",
+            )
+
+        # ---------------------------------------------
+        # 2. Get ticket + vendor + branch
+        # ---------------------------------------------
+
+        row = (
+            SupportRepository
+            .get_vendor_ticket_for_admin(
+                db,
+                vendor_ticket_id,
+            )
+        )
+
+        if not row:
+            raise HTTPException(
+                status_code=404,
+                detail="Vendor ticket not found",
+            )
+
+        (
+            ticket,
+            vendor,
+            branch,
+        ) = row
+
+        # ---------------------------------------------
+        # 3. Closed tickets cannot be changed
+        # ---------------------------------------------
+
+        if ticket.status == TicketStatus.CLOSED.value:
+            raise HTTPException(
+                status_code=400,
+                detail="This ticket is already closed",
+            )
+
+        # ---------------------------------------------
+        # 4. No-op if status is already the same
+        # ---------------------------------------------
+
+        if ticket.status == status.value:
+            return ticket
+
+        # ---------------------------------------------
+        # 5. Update status
+        # ---------------------------------------------
+
+        SupportRepository.update_vendor_ticket_status(
+            db=db,
+            ticket=ticket,
+            status=status.value,
+        )
+
+        ticket.updated_at = datetime.now(
+            timezone.utc
+        )
+
+        # ---------------------------------------------
+        # 6. Commit
+        # ---------------------------------------------
+
+        db.commit()
+        db.refresh(ticket)
+
+        return ticket
+
+    # =====================================================
+    # USER FEEDBACK
     # =====================================================
 
     @staticmethod
@@ -536,10 +1389,12 @@ class SupportService:
             )
 
         # ---------------------------------------------
-        # 2. Feedback only after completion or cancellation or rejection
+        # 2. Validate order status
         # ---------------------------------------------
 
-        order_status = str(order.order_status).strip().upper()
+        order_status = str(
+            order.order_status
+        ).strip().upper()
 
         allowed_statuses = {
             OrderStatus.COMPLETED.value,
@@ -547,10 +1402,14 @@ class SupportService:
             OrderStatus.REJECTED.value,
         }
 
-        if order.order_status not in allowed_statuses:
+        if order_status not in allowed_statuses:
             raise HTTPException(
                 status_code=400,
-                detail="Feedback can only be submitted for completed, cancelled or rejected orders",
+                detail=(
+                    "Feedback can only be submitted "
+                    "for completed, cancelled or "
+                    "rejected orders"
+                ),
             )
 
         # ---------------------------------------------
@@ -569,7 +1428,10 @@ class SupportService:
         if existing:
             raise HTTPException(
                 status_code=409,
-                detail="Feedback has already been submitted for this order",
+                detail=(
+                    "Feedback has already been "
+                    "submitted for this order"
+                ),
             )
 
         # ---------------------------------------------
@@ -630,36 +1492,47 @@ class SupportService:
         ) in rows:
 
             result.append({
-                "feedback_id": feedback.feedback_id,
+                "feedback_id":
+                    feedback.feedback_id,
 
                 "display_feedback_id":
                     f"FB-{feedback.feedback_id:06d}",
 
-                "order_id": order.order_id,
+                "order_id":
+                    order.order_id,
 
                 "display_order_id":
                     OrderRepository.build_display_order_id(
                         order
                     ),
 
-                "user_id": user.user_id,
+                "user_id":
+                    user.user_id,
 
                 "customer_name":
-                    f"{user.first_name} {user.last_name}".strip(),
+                    f"{user.first_name} "
+                    f"{user.last_name}".strip(),
 
-                "cafe_id": order.cafe_id,
+                "cafe_id":
+                    order.cafe_id,
 
-                "cafe_name": branch.branch_name,
+                "cafe_name":
+                    branch.branch_name,
 
-                "branch_id": order.branch_id,
+                "branch_id":
+                    order.branch_id,
 
-                "food_rating": feedback.food_rating,
+                "food_rating":
+                    feedback.food_rating,
 
-                "app_rating": feedback.app_rating,
+                "app_rating":
+                    feedback.app_rating,
 
-                "comments": feedback.comments,
+                "comments":
+                    feedback.comments,
 
-                "created_at": feedback.created_at,
+                "created_at":
+                    feedback.created_at,
             })
 
         return result
@@ -688,34 +1561,45 @@ class SupportService:
         ) = row
 
         return {
-            "feedback_id": feedback.feedback_id,
+            "feedback_id":
+                feedback.feedback_id,
 
             "display_feedback_id":
                 f"FB-{feedback.feedback_id:06d}",
 
-            "order_id": order.order_id,
+            "order_id":
+                order.order_id,
 
             "display_order_id":
                 OrderRepository.build_display_order_id(
                     order
                 ),
 
-            "user_id": user.user_id,
+            "user_id":
+                user.user_id,
 
             "customer_name":
-                f"{user.first_name} {user.last_name}".strip(),
+                f"{user.first_name} "
+                f"{user.last_name}".strip(),
 
-            "cafe_id": order.cafe_id,
+            "cafe_id":
+                order.cafe_id,
 
-            "cafe_name": branch.branch_name,
+            "cafe_name":
+                branch.branch_name,
 
-            "branch_id": order.branch_id,
+            "branch_id":
+                order.branch_id,
 
-            "food_rating": feedback.food_rating,
+            "food_rating":
+                feedback.food_rating,
 
-            "app_rating": feedback.app_rating,
+            "app_rating":
+                feedback.app_rating,
 
-            "comments": feedback.comments,
+            "comments":
+                feedback.comments,
 
-            "created_at": feedback.created_at,
+            "created_at":
+                feedback.created_at,
         }

@@ -1,6 +1,6 @@
 from sqlalchemy.orm import Session
 from fastapi import HTTPException, UploadFile
-
+from app.modules.vendor.models import BranchDocument
 from app.core.s3_service import (
     upload_file,
     validate_upload,
@@ -137,12 +137,15 @@ class VendorService:
         db: Session,
         branch_id: int,
         documents: list[UploadFile] | None,
+        document_names: list[str] | None,
     ):
 
         if not documents:
             return
 
-        for document in documents:
+        document_names = document_names or []
+
+        for index, document in enumerate(documents):
 
             validate_upload(
                 document,
@@ -157,10 +160,16 @@ class VendorService:
                 folder="branches/documents/other",
             )
 
+            document_name = (
+                document_names[index].strip()
+                if index < len(document_names) and document_names[index].strip()
+                else document.filename
+            )
+
             VendorRepository.create_branch_document(
                 db=db,
                 branch_id=branch_id,
-                document_name=document.filename,
+                document_name=document_name,
                 document_url=document_url,
             )
 
@@ -177,6 +186,7 @@ class VendorService:
         owner_document: UploadFile | None = None,
         bank_passbook: UploadFile | None = None,
         other_documents: list[UploadFile] | None = None,
+        other_document_names: list[str] | None = None,
     ):
 
         # -------------------------------------------------
@@ -209,6 +219,7 @@ class VendorService:
             db=db,
             branch_id=branch.branch_id,
             documents=other_documents,
+            document_names=other_document_names,
         )
 
         return branch
@@ -262,6 +273,7 @@ class VendorService:
         owner_document: UploadFile | None = None,
         bank_passbook: UploadFile | None = None,
         other_documents: list[UploadFile] | None = None,
+        other_document_names: list[str] | None = None,
     ):
 
         # -------------------------------------------------
@@ -301,6 +313,7 @@ class VendorService:
             db=db,
             branch_id=branch.branch_id,
             documents=other_documents,
+            document_names=other_document_names,
         )
 
         return branch
@@ -311,18 +324,94 @@ class VendorService:
         db: Session,
         branch_id: int,
     ):
-        branch = VendorRepository.get_branch_by_id(
+        result = VendorRepository.get_branch_by_id(
             db=db,
             branch_id=branch_id,
         )
 
-        if not branch:
+        if not result:
             raise HTTPException(
                 status_code=404,
                 detail="Branch not found",
             )
 
-        return branch
+        branch = result["branch"]
+
+        return {
+            "branch_id": branch.branch_id,
+            "cafe_id": branch.cafe_id,
+
+            "branch_name": branch.branch_name,
+
+            "city_id": branch.city_id,
+            "city_name": result["city_name"],
+
+            "campus_id": branch.campus_id,
+            "campus_name": result["campus_name"],
+
+            "building_id": branch.building_id,
+            "building_name": result["building_name"],
+
+            "opens_at": branch.opens_at,
+            "closes_at": branch.closes_at,
+
+            "image_url": branch.image_url,
+
+            "latitude": branch.latitude,
+            "longitude": branch.longitude,
+
+            "registered_address": branch.registered_address,
+            "business_address": branch.business_address,
+            "business_type": branch.business_type,
+
+            "fssai_license_number":
+                branch.fssai_license_number,
+
+            "fssai_license_document_url":
+                branch.fssai_license_document_url,
+
+            "gst_registration_number":
+                branch.gst_registration_number,
+
+            "gst_registration_document_url":
+                branch.gst_registration_document_url,
+
+            "bank_account_number":
+                branch.bank_account_number,
+
+            "ifsc_code":
+                branch.ifsc_code,
+
+            "account_holder_name":
+                branch.account_holder_name,
+
+            "bank_passbook_url":
+                branch.bank_passbook_url,
+
+            "registered_owner_name":
+                branch.registered_owner_name,
+
+            "owner_phone_number":
+                branch.owner_phone_number,
+
+            "owner_email":
+                branch.owner_email,
+
+            "owner_proof_document_url":
+                branch.owner_proof_document_url,
+
+            "is_active":
+                branch.is_active,
+
+            "documents": [
+                {
+                    "document_id": document.document_id,
+                    "document_name": document.document_name,
+                    "document_url": document.document_url,
+                }
+                for document in result["documents"]
+            ],
+        }
 
 
 class CafeService:

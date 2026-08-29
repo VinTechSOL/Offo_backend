@@ -3,9 +3,15 @@ from datetime import time
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.security import get_current_user,get_current_staff
-from app.modules.vendor.schemas import CafeteriaCreate, CafeBranchCreate, UpdateBranchRequest
 from app.modules.vendor.service import VendorService,CafeService
-from app.modules.vendor.schemas import CafeForUserResponse,UpdateBranchStatusRequest
+from app.modules.vendor.schemas import (
+    CafeForUserResponse,
+    UpdateBranchStatusRequest,
+    CafeteriaCreate,
+    CafeBranchCreate,
+    UpdateBranchRequest,
+    BranchDetailsResponse
+    )
 from app.modules.vendor.models import CafeBranch,Cafeteria
 
 
@@ -68,6 +74,7 @@ def create_branch(
     bank_passbook: UploadFile | None = File(None),
 
     other_documents: list[UploadFile] | None = File(None),
+    other_document_names: list[str] | None = Form(None),
 
     db: Session = Depends(get_db),
 ):
@@ -112,6 +119,7 @@ def create_branch(
         owner_document=owner_document,
         bank_passbook=bank_passbook,
         other_documents=other_documents,
+        other_document_names=other_document_names,
     )
 
 @router.get("/cafeterias/{cafe_id}/branches")
@@ -183,7 +191,7 @@ def cafes_for_user(
     return CafeService.get_for_user(db, user.user_id)
 
 
-@router.get("/branches/{branch_id}")
+@router.get("/branches/{branch_id}", response_model=BranchDetailsResponse)
 def get_branch(
     branch_id: int,
     db: Session = Depends(get_db),
@@ -249,6 +257,7 @@ def update_branch(
     bank_passbook: UploadFile |None = File(None),
 
     other_documents: list[UploadFile] | None = File(None),
+    other_document_names: list[str] | None = Form(None),
 
     db: Session = Depends(get_db),
     staff=Depends(get_current_staff),
@@ -301,6 +310,7 @@ def update_branch(
         owner_document=owner_document,
         bank_passbook=bank_passbook,
         other_documents=other_documents,
+        other_document_names=other_document_names,
     )
 
 @router.patch("/branches/{branch_id}/status")

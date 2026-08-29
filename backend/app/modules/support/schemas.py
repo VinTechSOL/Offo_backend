@@ -209,3 +209,216 @@ class AdminFeedbackResponse(BaseModel):
     comments: str | None
 
     created_at: datetime
+
+
+# =========================================================
+# VENDOR - TICKETS
+# =========================================================
+
+class VendorTicketCreate(BaseModel):
+    category: str = Field(
+        ...,
+        min_length=1,
+        max_length=100,
+    )
+
+    severity: str = Field(
+        ...,
+        min_length=1,
+        max_length=20,
+    )
+
+    affected_order_ids: str | None = Field(
+        default=None,
+        max_length=5000,
+    )
+
+    subject: str = Field(
+        ...,
+        min_length=1,
+        max_length=255,
+    )
+
+    description: str = Field(
+        ...,
+        min_length=10,
+        max_length=5000,
+    )
+
+
+class VendorTicketResponse(BaseModel):
+    vendor_ticket_id: int
+
+    display_ticket_id: str
+
+    vendor_staff_id: int
+
+    category: str
+    severity: str
+
+    affected_order_ids: str | None
+
+    subject: str
+    description: str
+
+    image_url: str | None
+
+    status: TicketStatus
+
+    created_at: datetime
+    updated_at: datetime
+
+
+class VendorTicketMessageCreate(BaseModel):
+    message: str = Field(
+        ...,
+        min_length=1,
+        max_length=5000,
+    )
+
+
+class VendorTicketMessageResponse(BaseModel):
+    message_id: int
+
+    vendor_ticket_id: int
+
+    sender_type: str
+    sender_id: int
+
+    message: str
+
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class VendorTicketDetailResponse(BaseModel):
+    vendor_ticket_id: int
+
+    display_ticket_id: str
+
+    vendor_staff_id: int
+
+    category: str
+    severity: str
+
+    affected_order_ids: str | None
+
+    subject: str
+    description: str
+
+    image_url: str | None
+
+    status: TicketStatus
+
+    created_at: datetime
+    updated_at: datetime
+
+    messages: list[VendorTicketMessageResponse] = Field(
+        default_factory=list
+    )
+
+
+# =========================================================
+# VENDOR - FEEDBACK
+# =========================================================
+
+class VendorFeedbackResponse(BaseModel):
+    feedback_id: int
+
+    display_feedback_id: str
+
+    order_id: int
+    display_order_id: str
+
+    user_id: int
+    customer_name: str
+
+    food_rating: int
+    comments: str | None
+
+    created_at: datetime
+
+
+# =========================================================
+# ADMIN - VENDOR TICKETS
+# =========================================================
+
+class AdminVendorTicketResponse(BaseModel):
+    vendor_ticket_id: int
+    display_ticket_id: str
+
+    vendor_staff_id: int
+    vendor_name: str
+    vendor_username: str
+
+    cafe_id: int | None
+    cafe_name: str | None
+
+    branch_id: int | None
+    branch_name: str | None
+
+    category: str
+    severity: str
+
+    affected_order_ids: str | None
+
+    subject: str
+    description: str
+
+    image_url: str | None
+
+    status: TicketStatus
+
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminVendorTicketMessageResponse(BaseModel):
+    message_id: int
+    vendor_ticket_id: int
+
+    sender_type: str
+    sender_id: int
+
+    message: str
+
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AdminVendorTicketDetailResponse(BaseModel):
+    vendor_ticket_id: int
+    display_ticket_id: str
+
+    vendor_staff_id: int
+    vendor_name: str
+    vendor_username: str
+
+    cafe_id: int | None
+    cafe_name: str | None
+
+    branch_id: int | None
+    branch_name: str | None
+
+    category: str
+    severity: str
+
+    affected_order_ids: str | None
+
+    subject: str
+    description: str
+
+    image_url: str | None
+
+    status: TicketStatus
+
+    created_at: datetime
+    updated_at: datetime
+
+    messages: list[AdminVendorTicketMessageResponse] = Field(
+        default_factory=list
+    )

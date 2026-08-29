@@ -55,8 +55,19 @@ DOCUMENT_TYPES = {
     "image/webp",
 }
 
-MAX_IMAGE_SIZE = 5 * 1024 * 1024       # 5 MB
-MAX_DOCUMENT_SIZE = 10 * 1024 * 1024   # 10 MB
+MAX_IMAGE_SIZE = 400 * 1024          # 400 KB
+MAX_DOCUMENT_SIZE = 1 * 1024 * 1024  # 1 MB
+
+
+# -------------------------------------------------
+# FILE SIZE FORMATTER
+# -------------------------------------------------
+
+def _format_file_size(size: int) -> str:
+    if size < 1024 * 1024:
+        return f"{size // 1024} KB"
+
+    return f"{size / (1024 * 1024):.1f} MB"
 
 
 # -------------------------------------------------
@@ -89,7 +100,7 @@ def validate_upload(
     if size > max_size:
         raise HTTPException(
             status_code=400,
-            detail=f"Maximum allowed size is {max_size // (1024 * 1024)} MB.",
+            detail=(f"Maximum allowed size is {_format_file_size(max_size)}." ),
         )
 
 

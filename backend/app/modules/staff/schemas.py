@@ -84,3 +84,15 @@ class StaffResetPasswordRequest(BaseModel):
 
 class StaffResetPasswordResponse(BaseModel):
     message: str
+
+
+# =========================================================
+# CHANGE PASSWORD
+# =========================================================
+
+class StaffChangePasswordRequest(BaseModel):
+    new_password: str = Field(..., min_length=6, max_length=72)
+
+
+class StaffChangePasswordResponse(BaseModel):
+    message: str
