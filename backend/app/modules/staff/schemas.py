@@ -37,10 +37,25 @@ class VendorCreateRequest(BaseModel):
 
 
 class VendorUpdateRequest(BaseModel):
-    first_name: str
-    last_name: str
-    username: str
-    is_active: bool
+    first_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+
+    last_name: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+
+    username: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=100,
+    )
+
+    is_active: bool | None = None
 
 
 class VendorResponse(BaseModel):

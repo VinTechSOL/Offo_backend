@@ -611,10 +611,13 @@ class PaymentService:
         Get the exact amount originally paid for this order.
 
         Refund amount is taken from the stored PaymentIntentOrder
-        allocation:
+        allocation for instant order:
 
             order_amount
             + checkout_fee_share
+        
+        for scheduled orders:
+            refund only the order amount, not checkout_fee_share.
 
         checkout_fee_share already contains this order's allocated
         share of:
@@ -634,25 +637,69 @@ class PaymentService:
         )
 
         if not payment_order:
-            raise HTTPException(
-                status_code=400,
-                detail="Order is not linked to payment intent",
+
+            #legacy/ single-order payment-intet
+            if intent.order_id != order_id:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Order is not linked to payment intent",
+                )
+
+            order = OrderRepository.get_order(
+                db,
+                order_id,
             )
 
+            if not order:
+                raise HTTPException(
+                    status_code=404,
+                    detail="Order not found",
+                )
+
+            #preserve the existing legacy behaviour by using the intent amount
+            return Decimal(
+                str(intent.amount)
+            ).quantize(
+                Decimal("0.01")
+            )
+            
+
+        order = OrderRepository.get_order(
+            db,
+            order_id,
+        )
+
+        if not order:
+            raise HTTPException(
+                status_code=404,
+                detail="order not found"
+            )
+
+        order_amount = Decimal(
+            str(payment_order.order_amount)
+        )
+
+        #schedulded orders receive only the food/order amount
+        #instant orders receive the order amount + allocated checkout fee
+
+        if order.order_type == "SCHEDULED":
+            return order_amount.quantize(
+                Decimal("0.01")
+            )
+        
+        checkout_fee_share = Decimal(
+            str(payment_order.checkout_fee_share)
+        )
+
         refund_amount = (
-            Decimal(str(payment_order.order_amount))
-            + Decimal(str(payment_order.checkout_fee_share))
-        ).quantize(
+            order_amount
+            + checkout_fee_share
+        )
+
+        return refund_amount.quantize(
             Decimal("0.01")
         )
 
-        if refund_amount <= 0:
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid refund amount",
-            )
-
-        return float(refund_amount)
 
     # ============================================================
     # INITIATE REFUND

@@ -43,9 +43,6 @@ def set_refresh_cookie(
     access document.cookie for this token.
     """
 
-    is_production = (
-        settings.ENVIRONMENT == "production"
-    )
 
     response.set_cookie(
         key=REFRESH_COOKIE_NAME,
@@ -53,8 +50,8 @@ def set_refresh_cookie(
         max_age=REFRESH_COOKIE_MAX_AGE,
         httponly=True,
         secure=True,
-        domain=".offo.co.in",
         samesite="lax",
+        domain=".offo.co.in",
         path="/",
     )
 
@@ -64,11 +61,7 @@ def clear_refresh_cookie(
 ):
     response.delete_cookie(
         key=REFRESH_COOKIE_NAME,
-        httponly=True,
-        secure=(
-            settings.ENVIRONMENT == "production"
-        ),
-        samesite="lax",
+        domain=".offo.co.in",
         path="/",
     )
 

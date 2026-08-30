@@ -56,7 +56,6 @@ def staff_login(
         max_age=30 * 24 * 60 * 60,
         path="/staff/auth",
     )
-
     return result
 
 # =========================================================
@@ -91,7 +90,8 @@ def refresh_access_token(
         key="staff_refresh_token",
         value=new_refresh_token,
         httponly=True,
-        secure=False,
+        secure=True,
+        domain=".offo.co.in",
         samesite="lax",
         max_age=30 * 24 * 60 * 60,
         path="/staff/auth",
@@ -405,6 +405,7 @@ def staff_logout(
 
     response.delete_cookie(
         key="staff_refresh_token",
+        domain=".offo.co.in",
         path="/staff/auth",
     )
 

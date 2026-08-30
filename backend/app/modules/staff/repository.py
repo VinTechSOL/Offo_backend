@@ -72,6 +72,9 @@ class StaffRepository:
                 Staff.role.has(role_name="VENDOR"),
                 Staff.is_active == True,
             )
+            .order_by(
+                Staff.staff_id.desc
+            )
             .first()
         ) 
 
@@ -89,6 +92,9 @@ class StaffRepository:
             .filter(
                 Staff.branch_id == branch_id,
                 Staff.role.has(role_name="VENDOR"),
+            )
+            .order_by(
+                Staff.staff_id.desc
             )
             .first()
         )

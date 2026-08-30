@@ -757,50 +757,152 @@ class StaffAuthService:
     def update_vendor(
         db: Session,
         staff_id: int,
-        first_name: str,
-        last_name: str,
-        username: str,
-        is_active: bool,
+        first_name: str | None = None,
+        last_name: str | None = None,
+        username: str | None = None,
+        is_active: bool | None = None,
     ) -> Staff:
 
-        staff = StaffRepository.get_by_id(db, staff_id)
+        # =========================================================
+        # LOAD STAFF
+        # =========================================================
+
+        staff = StaffRepository.get_by_id(
+            db,
+            staff_id,
+        )
 
         if not staff:
             raise HTTPException(
                 status_code=404,
-                detail="Vendor not found"
+                detail="Vendor not found",
             )
+
+        # =========================================================
+        # VERIFY VENDOR
+        # =========================================================
 
         if staff.role.role_name != "VENDOR":
             raise HTTPException(
                 status_code=400,
-                detail="Staff is not a vendor"
+                detail="Staff is not a vendor",
             )
 
-        # Username uniqueness check
-        if username != staff.username:
+        # =========================================================
+        # TRACK IMPORTANT CHANGES
+        # =========================================================
 
-            existing = StaffRepository.get_by_username_any_status(
-                db,
-                username,
-            )
+        username_changed = False
+        status_changed = False
 
-            if existing:
+        # =========================================================
+        # UPDATE FIRST NAME
+        # =========================================================
+
+        if first_name is not None:
+
+            first_name = first_name.strip()
+
+            if not first_name:
                 raise HTTPException(
                     status_code=400,
-                    detail="Username already exists"
+                    detail="First name cannot be empty",
                 )
 
-        staff.first_name = first_name
-        staff.last_name = last_name
-        staff.username = username
-        staff.is_active = is_active
+            staff.first_name = first_name
 
+        # =========================================================
+        # UPDATE LAST NAME
+        # =========================================================
 
-        return StaffRepository.update(
-            db,
-            staff,
-        )
+        if last_name is not None:
+
+            last_name = last_name.strip()
+
+            if not last_name:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Last name cannot be empty",
+                )
+
+            staff.last_name = last_name
+
+        # =========================================================
+        # UPDATE USERNAME
+        # =========================================================
+
+        if username is not None:
+
+            username = username.strip()
+
+            if not username:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Username cannot be empty",
+                )
+
+            if username != staff.username:
+
+                existing = (
+                    StaffRepository.get_by_username_any_status(
+                        db,
+                        username,
+                    )
+                )
+
+                if existing and existing.staff_id != staff.staff_id:
+                    raise HTTPException(
+                        status_code=409,
+                        detail="Username already exists",
+                    )
+
+                staff.username = username
+                username_changed = True
+
+        # =========================================================
+        # UPDATE ACTIVE STATUS
+        # =========================================================
+
+        if is_active is not None:
+
+            if staff.is_active != is_active:
+                status_changed = True
+
+            staff.is_active = is_active
+
+        # =========================================================
+        # REVOKE EXISTING SESSIONS
+        # =========================================================
+
+        # If username or active status changes,
+        # invalidate existing vendor refresh sessions.
+
+        if username_changed or status_changed:
+
+            StaffRepository.revoke_all_refresh_tokens(
+                db=db,
+                staff_id=staff.staff_id,
+            )
+
+        # =========================================================
+        # SAVE
+        # =========================================================
+
+        try:
+
+            db.commit()
+            db.refresh(staff)
+
+        except SQLAlchemyError:
+
+            db.rollback()
+
+            raise HTTPException(
+                status_code=500,
+                detail="Unable to update vendor",
+            )
+
+        return staff
 
     # =========================================================
     # REFRESH TOKEN

@@ -4,12 +4,25 @@ import logging
 from phonepe.sdk.pg.payments.v2.models.request.standard_checkout_pay_request import (
     StandardCheckoutPayRequest,
 )
+
+
 from phonepe.sdk.pg.common.models.request.refund_request import (
     RefundRequest,
 )
 from phonepe.sdk.pg.common.models.request.meta_info import MetaInfo
 
-
+from phonepe.sdk.pg.common.models.request.payment_mode_constraints.upi_intent_payment_mode import (
+    UpiIntentPaymentModeConstraint,
+)
+from phonepe.sdk.pg.common.models.request.payment_mode_constraints.upi_qr_payment_mode import (
+    UpiQrPaymentModeConstraint,
+)
+from phonepe.sdk.pg.common.models.request.pg_v2_instrument_type import (
+    PgV2InstrumentType,
+)
+from phonepe.sdk.pg.payments.v2.models.request.payment_mode_config import (
+    PaymentModeConfig,
+)
 from app.core.config import settings
 from app.modules.payments.gateways.phonepe.sdk_client import PhonePeSDK
 from urllib.parse import urlencode
@@ -61,11 +74,19 @@ class PhonePeClient:
         logger = logging.getLogger(__name__)
         logger.info("Redirect URL: %s", redirect_url)
 
+        payment_mode_config = PaymentModeConfig(
+            enabled_payment_modes=[
+                UpiIntentPaymentModeConstraint(),
+                UpiQrPaymentModeConstraint(),
+            ]
+        )
+
         request = StandardCheckoutPayRequest.build_request(
             merchant_order_id=merchant_order_id,
             amount=amount,
             redirect_url = redirect_url,
             meta_info=meta_info,
+            payment_mode_config=payment_mode_config,
             message=f"Order #{order_id}",
             expire_after=3600,
             disable_payment_retry=False,

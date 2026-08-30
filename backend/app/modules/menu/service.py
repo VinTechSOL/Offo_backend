@@ -1,6 +1,7 @@
 from sqlalchemy.orm import Session
 from app.modules.menu.repository import MenuRepository
 from fastapi import HTTPException
+from app.modules.vendor.models import CafeBranch
 
 class MenuService:
 
@@ -63,6 +64,21 @@ class MenuService:
     def list_branch_menu_for_users(db: Session, branch_id: int):
         rows = MenuRepository.get_branch_menu_for_users(db, branch_id)
 
+        branch = (
+            db.query(CafeBranch)
+            .filter(
+                CafeBranch.branch_id == branch_id,
+                CafeBranch.is_active == True
+            )
+            .first()
+        )
+
+        if not branch:
+            raise HTTPException(
+                status_code=404,
+                detail="branch not found"
+            )
+
         categories = {}
 
         for r in rows:
@@ -86,6 +102,7 @@ class MenuService:
 
         return {
             "branch_id": branch_id,
+            "fssai_license_number": branch.fssai_license_number,
             "categories": list(categories.values())
         }
     

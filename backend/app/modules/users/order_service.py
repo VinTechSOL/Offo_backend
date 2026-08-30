@@ -158,6 +158,17 @@ class UserOrderService:
                 o.order_id,
             )
 
+            intent = PaymentRepository.get_intent_by_order(
+                db,
+                o.order_id,
+            )
+
+            bill = build_order_bill(
+                o,
+                items,
+                intent,
+            )
+
             response.append({
                 "order_id": o.order_id,
                 "user_id": o.user_id,
@@ -176,9 +187,7 @@ class UserOrderService:
                 "created_at": o.created_at,
                 "updated_at": o.updated_at,
 
-                "total_amount": float(
-                    o.total_amount
-                ),
+                "total_amount": bill["total"],
 
                 "items": [
                     {
