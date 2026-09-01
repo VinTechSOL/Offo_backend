@@ -41,7 +41,7 @@ class ReportsRepository:
             func.coalesce(func.sum(Order.total_amount), 0)
         ).filter(
             Order.branch_id == branch_id,
-            Order.order_status == OrderStatus.PICKED_UP
+            Order.order_status == OrderStatus.COMPLETED
         )
 
         revenue_query = ReportsRepository.apply_date_filter(
@@ -156,7 +156,7 @@ class ReportsRepository:
         ).filter(
             Order.branch_id == branch_id,
             BranchMenuItem.branch_id == branch_id,
-            Order.order_status == OrderStatus.PICKED_UP
+            Order.order_status == OrderStatus.COMPLETED
         )
 
         query = ReportsRepository.apply_date_filter(
