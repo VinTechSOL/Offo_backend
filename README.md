@@ -92,40 +92,6 @@ File validation
 Business rules
 Repository Structure
 
-A typical backend structure is organized around modules and shared infrastructure.
-
-offo-backend/
-│
-├── backend/
-│   │
-│   ├── app/
-│   │   ├── admin/
-│   │   ├── auth/
-│   │   ├── bookings/
-│   │   ├── cart/
-│   │   ├── catalog/
-│   │   ├── core/
-│   │   ├── guests/
-│   │   ├── locations/
-│   │   ├── menu/
-│   │   ├── notifications/
-│   │   ├── orders/
-│   │   ├── payments/
-│   │   ├── rooms/
-│   │   ├── settings/
-│   │   ├── staff/
-│   │   ├── support/
-│   │   ├── users/
-│   │   └── ...
-│   │
-│   ├── migrations/
-│   │
-│   ├── alembic.ini
-│   ├── requirements.txt
-│   └── ...
-│
-├── .gitignore
-└── README.md
 
 Keep the actual repository structure as the source of truth if a module or directory differs.
 
